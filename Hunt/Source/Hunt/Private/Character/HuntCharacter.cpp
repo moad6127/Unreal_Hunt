@@ -5,6 +5,7 @@
 #include "EnhancedInputComponent.h"
 #include "InputAction.h"
 #include "Camera/CameraComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 AHuntCharacter::AHuntCharacter()
 {
@@ -23,7 +24,9 @@ AHuntCharacter::AHuntCharacter()
 void AHuntCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	// 기본 상태는 걷기 (BP에서 WalkSpeed를 바꿔도 반영되도록 BeginPlay에서 설정)
+	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 }
 
 
@@ -34,6 +37,9 @@ void AHuntCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	UEnhancedInputComponent* EnhancedInput = CastChecked<UEnhancedInputComponent>(PlayerInputComponent);
 	EnhancedInput->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AHuntCharacter::Move);
 	EnhancedInput->BindAction(LookAction, ETriggerEvent::Triggered, this, &AHuntCharacter::Look);
+	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
+	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+	EnhancedInput->BindAction(RunAction, ETriggerEvent::Started, this, &AHuntCharacter::ToggleRun);
 }
 
 void AHuntCharacter::Move(const FInputActionValue& Value)
@@ -51,4 +57,10 @@ void AHuntCharacter::Look(const FInputActionValue& Value)
 
 	AddControllerYawInput(Input.X);
 	AddControllerPitchInput(Input.Y);
+}
+
+void AHuntCharacter::ToggleRun()
+{
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	Movement->MaxWalkSpeed = (Movement->MaxWalkSpeed == RunSpeed) ? WalkSpeed : RunSpeed;
 }

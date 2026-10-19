@@ -5,18 +5,23 @@
 #include "EnhancedInputComponent.h"
 #include "InputAction.h"
 #include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Weapon/HuntWeapon.h"
 
 AHuntCharacter::AHuntCharacter()
 {
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = false;
+	// 카메라가 머리를 따라가도록 매 프레임 갱신. 애니 포즈가 끝난 뒤의 머리 위치를 쓰기 위해 PostPhysics
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.TickGroup = TG_PostPhysics;
 
-	// 트루 1인칭: 바디 메쉬의 머리 소켓에 카메라를 붙인다
 	GetMesh()->SetRelativeLocationAndRotation(FVector(0.f, 0.f, -90.f), FRotator(0.f, -90.f, 0.f));
 
+	// 카메라는 캡슐에 붙이고 위치만 Tick에서 머리를 부드럽게 따라가게 한다 (배그식 트루 1인칭)
+	// 회전은 컨트롤 회전을 그대로 써서 머리 뼈 회전 흔들림은 화면에 실리지 않는다
 	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
-	FirstPersonCamera->SetupAttachment(GetMesh(), TEXT("head"));
+	FirstPersonCamera->SetupAttachment(GetCapsuleComponent());
+	FirstPersonCamera->SetRelativeLocation(FVector(0.f, 0.f, BaseEyeHeight));
 	FirstPersonCamera->bUsePawnControlRotation = true;
 
 }
@@ -27,6 +32,35 @@ void AHuntCharacter::BeginPlay()
 
 	// 기본 상태는 걷기 (BP에서 WalkSpeed를 바꿔도 반영되도록 BeginPlay에서 설정)
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
+
+	if (DefaultWeapon)
+	{
+		// shortcut: 서버·클라이언트가 각자 로컬로 스폰한다(복제 안 함), M1-④ 멀티 점검 때 서버 스폰 + 복제로 교체
+		AHuntWeapon* Weapon = GetWorld()->SpawnActorDeferred<AHuntWeapon>(AHuntWeapon::StaticClass(), FTransform::Identity, this, this);
+		Weapon->Definition = DefaultWeapon; // OnConstruction(FinishSpawning)에서 메시가 적용되도록 먼저 설정
+		Weapon->FinishSpawning(FTransform::Identity);
+		Weapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocketName);
+		EquippedWeapon = Weapon;
+	}
+}
+
+void AHuntCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	// 다른 플레이어의 캐릭터는 내 화면 카메라가 아니므로 갱신하지 않는다
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	// 목표 = 머리 뼈 위치 + 시선 방향으로 얼굴 앞까지 (캡슐 기준 좌표로 변환)
+	const FVector HeadWorld = GetMesh()->GetSocketLocation(CameraHeadBone) + GetControlRotation().Vector() * CameraForwardOffset;
+	const FVector Target = GetCapsuleComponent()->GetComponentTransform().InverseTransformPosition(HeadWorld);
+
+	// 보간으로 걷기·달리기의 머리 흔들림을 줄인다 (0이면 즉시 따라감)
+	const FVector Current = FirstPersonCamera->GetRelativeLocation();
+	FirstPersonCamera->SetRelativeLocation(CameraFollowSpeed > 0.f ? FMath::VInterpTo(Current, Target, DeltaSeconds, CameraFollowSpeed) : Target);
 }
 
 
@@ -40,6 +74,7 @@ void AHuntCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
 	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 	EnhancedInput->BindAction(RunAction, ETriggerEvent::Started, this, &AHuntCharacter::ToggleRun);
+	EnhancedInput->BindAction(FireAction, ETriggerEvent::Started, this, &AHuntCharacter::Fire);
 }
 
 void AHuntCharacter::Move(const FInputActionValue& Value)
@@ -63,4 +98,13 @@ void AHuntCharacter::ToggleRun()
 {
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	Movement->MaxWalkSpeed = (Movement->MaxWalkSpeed == RunSpeed) ? WalkSpeed : RunSpeed;
+}
+
+void AHuntCharacter::Fire()
+{
+	if (EquippedWeapon)
+	{
+		// 카메라가 보는 방향(컨트롤 회전)으로 쏜다
+		EquippedWeapon->Fire(GetControlRotation());
+	}
 }

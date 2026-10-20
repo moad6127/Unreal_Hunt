@@ -30,6 +30,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (ClampMin = "0.0"))
 	float FireInterval = 0.5f;
 
+	// 조준(ADS)에 걸리는 시간(초). 짧을수록 조준이 빠르다
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (ClampMin = "0.01"))
+	float AimDownSightsTime = 0.25f;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<USoundBase> FireSound;
 };

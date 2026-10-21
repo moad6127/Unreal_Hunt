@@ -39,6 +39,44 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bIsFalling = false;
 
+	// 제자리 회전(Lyra 방식): 서 있을 때 액터는 시선을 따라 돌지만 몸은 이만큼 반대로 돌려 제자리에 둔다
+	// ABP의 Rotate Root Bone(Yaw)에 넣는다. +면 몸이 시선보다 오른쪽을 보고 있다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TurnInPlace")
+	float RootYawOffset = 0.f;
+
+	// 루트를 돌린 만큼 상체를 되돌려 총이 시선을 향하게 한다. 에임 오프셋 Yaw(X)에 넣는다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TurnInPlace")
+	float AimYaw = 0.f;
+
+	// 0 = 회전 안 함, 1 = 왼쪽, 2 = 오른쪽. ABP의 Blend Poses by int에 넣는다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TurnInPlace")
+	int32 TurnDirection = 0;
+
+	// 회전 애니메이션 재생 시간. ABP의 Sequence Evaluator(Explicit Time)에 넣는다
+	// Sequence Player는 같은 방향으로 연달아 돌 때 처음부터 다시 재생되지 않아서 시간을 직접 준다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TurnInPlace")
+	float TurnTime = 0.f;
+
+	// 몸과 시선 차이가 이 각도를 넘으면 회전 애니메이션을 시작한다
+	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
+	float TurnStartAngle = 50.f;
+
+	// 몸과 시선이 이 이상 벌어지면 몸이 바로 따라온다
+	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
+	float MaxRootYawOffset = 120.f;
+
+	// 몸과 시선 차이가 MaxRootYawOffset에 가까울수록 회전 애니메이션을 이 배율까지 빨리 재생한다 (빠르게 돌 때 몸이 끌려가지 않게)
+	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "1.0"))
+	float MaxTurnPlayRate = 1.75f;
+
+	// 회전이 끝난 뒤 다음 회전까지 쉬는 시간. ABP 회전 블렌드 시간(0.2초) 이상이어야 이전 회전이 다 빠진 뒤 새로 시작해 튀지 않는다
+	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
+	float TurnRetriggerDelay = 0.2f;
+
+	// 움직이기 시작하면 몸이 시선 방향으로 돌아오는 속도
+	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
+	float RootYawBlendOutSpeed = 10.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	bool bHasWeapon = false;
 
@@ -66,21 +104,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sway", meta = (ClampMin = "0.0"))
 	float AimSwayMaxAngle = 2.f;
 
-	// 조준 중 걸을 때 손 흔들림 크기(cm, 컴포넌트 공간 X=좌우, Z=상하). 이동 속도가 BobReferenceSpeed일 때 기준
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sway")
-	FVector AimBobAmplitude = FVector(0.4f, 0.f, 0.3f);
-
-	// 흔들림 주기(초당 좌우 한 번 왕복, 상하는 두 번)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sway", meta = (ClampMin = "0.0"))
-	float AimBobFrequency = 1.5f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sway", meta = (ClampMin = "1.0"))
-	float BobReferenceSpeed = 250.f;
-
-	// 조준 중 상체 위치 흔들림(컴포넌트 공간). ABP의 같은 Modify Bone 노드 Translation(Additive, Component Space)에 넣는다
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Sway")
-	FVector AimHandBobOffset = FVector::ZeroVector;
-
 	// 왼손 IK 목표 위치: 총의 왼손 소켓을 오른손(hand_r) 뼈 기준으로 나타낸 값. ABP의 Two Bone IK(Bone Space, hand_r)에 넣는다
 	// 총이 오른손에 붙어 있으므로 이 상대값은 프레임 지연 없이 정확하다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
@@ -98,8 +121,13 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AHuntCharacter> Character;
 
-	float BobPhase = 0.f;
-	float BobWeight = 0.f;
+	void UpdateTurnInPlace(float DeltaSeconds);
+
+	float PrevActorYaw = 0.f;
+	// 회전 애니메이션의 RemainingTurnYaw(가중치로 나눈 값) 직전 프레임 값
+	float PrevTurnYawCurve = 0.f;
+	bool bTurnCurveActive = false;
+	float TurnCooldown = 0.f;
 
 	// 흔들림 보간된 오른손 목표 회전(월드)
 	FQuat SmoothedHandQuat = FQuat::Identity;

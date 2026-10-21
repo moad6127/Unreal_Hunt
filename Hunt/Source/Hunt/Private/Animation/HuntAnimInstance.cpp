@@ -11,6 +11,10 @@ void UHuntAnimInstance::NativeInitializeAnimation()
 	Super::NativeInitializeAnimation();
 
 	Character = Cast<AHuntCharacter>(TryGetPawnOwner());
+	if (Character)
+	{
+		PrevActorYaw = Character->GetActorRotation().Yaw;
+	}
 }
 
 void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -82,11 +86,67 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		AimSpineCorrection = FRotator::ZeroRotator;
 	}
 
-	// 걸음 흔들림: 좌우 한 번 왕복할 때 상하 두 번(8자). 속도에 비례하고 멈추면 서서히 잦아든다
-	const float BobTarget = bIsFalling ? 0.f : FMath::Clamp(GroundSpeed / BobReferenceSpeed, 0.f, 1.5f);
-	BobWeight = FMath::FInterpTo(BobWeight, BobTarget, DeltaSeconds, 6.f);
-	BobPhase = FMath::Fmod(BobPhase + DeltaSeconds * UE_TWO_PI * AimBobFrequency * BobWeight, UE_TWO_PI);
-	AimHandBobOffset = FVector(FMath::Sin(BobPhase) * AimBobAmplitude.X, 0.f, FMath::Sin(2.f * BobPhase) * AimBobAmplitude.Z) * BobWeight;
-
 	AimPitch = FRotator::NormalizeAxis(AimRotation.Pitch);
+
+	UpdateTurnInPlace(DeltaSeconds);
+}
+
+void UHuntAnimInstance::UpdateTurnInPlace(float DeltaSeconds)
+{
+	static const FName TurnYawWeightCurve(TEXT("TurnYawWeight"));
+	static const FName RemainingTurnYawCurve(TEXT("RemainingTurnYaw"));
+
+	const float ActorYaw = Character->GetActorRotation().Yaw;
+	const float YawDelta = FRotator::NormalizeAxis(ActorYaw - PrevActorYaw);
+	PrevActorYaw = ActorYaw;
+
+	const bool bCanTurn = !bShouldMove && !bIsFalling;
+	if (bCanTurn)
+	{
+		// 액터가 시선을 따라 돈 만큼 반대로 돌려 몸을 월드에 고정. NormalizeAxis를 쓰면 빠르게 돌 때 180을 넘어 부호가 뒤집힌다
+		RootYawOffset = FMath::Clamp(RootYawOffset - YawDelta, -MaxRootYawOffset, MaxRootYawOffset);
+	}
+	else
+	{
+		RootYawOffset = FMath::FInterpTo(RootYawOffset, 0.f, DeltaSeconds, RootYawBlendOutSpeed);
+		TurnDirection = 0;
+	}
+
+	if (TurnDirection != 0)
+	{
+		const float Lag = FMath::Clamp(FMath::GetRangePct(TurnStartAngle, MaxRootYawOffset, FMath::Abs(RootYawOffset)), 0.f, 1.f);
+		TurnTime += DeltaSeconds * FMath::Lerp(1.f, MaxTurnPlayRate, Lag);
+	}
+	TurnCooldown = FMath::Max(0.f, TurnCooldown - DeltaSeconds);
+
+	// 회전 애니메이션이 돈 만큼 오프셋을 줄인다 (Lyra ProcessTurnYawCurve). 블렌드 중엔 커브에 가중치가 곱해져 있어 나눠서 복원
+	const float TurnWeight = GetCurveValue(TurnYawWeightCurve);
+	if (TurnWeight > KINDA_SMALL_NUMBER)
+	{
+		const float TurnYaw = GetCurveValue(RemainingTurnYawCurve) / TurnWeight;
+		if (bTurnCurveActive)
+		{
+			RootYawOffset -= TurnYaw - PrevTurnYawCurve;
+		}
+		PrevTurnYawCurve = TurnYaw;
+		bTurnCurveActive = true;
+	}
+	else if (bTurnCurveActive)
+	{
+		// 회전 구간이 끝났다 (TurnYawWeight가 0으로 떨어짐)
+		bTurnCurveActive = false;
+		TurnDirection = 0;
+		TurnCooldown = TurnRetriggerDelay;
+	}
+
+	RootYawOffset = FMath::Clamp(RootYawOffset, -MaxRootYawOffset, MaxRootYawOffset);
+
+	if (bCanTurn && TurnDirection == 0 && TurnCooldown <= 0.f && FMath::Abs(RootYawOffset) > TurnStartAngle)
+	{
+		// TurnLeft의 RemainingTurnYaw는 -90 -> 0이라 위 식에서 +오프셋을 줄인다
+		TurnDirection = RootYawOffset > 0.f ? 1 : 2;
+		TurnTime = 0.f;
+	}
+
+	AimYaw = -RootYawOffset;
 }

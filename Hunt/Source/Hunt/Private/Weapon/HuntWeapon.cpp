@@ -24,6 +24,23 @@ void AHuntWeapon::OnConstruction(const FTransform& Transform)
 	Mesh->SetSkeletalMesh(Definition ? Definition->Mesh : nullptr);
 }
 
+FVector AHuntWeapon::GetLeftHandGripLocation(float AimAlpha) const
+{
+	const FVector HipGrip = Mesh->GetSocketLocation(LeftHandSocketName);
+	const FVector ADSGrip = Mesh->DoesSocketExist(LeftHandADSSocketName) ? Mesh->GetSocketLocation(LeftHandADSSocketName) : HipGrip;
+	return FMath::Lerp(HipGrip, ADSGrip, AimAlpha);
+}
+
+bool AHuntWeapon::GetFirstPersonLeftHandGripLocation(FVector& OutLocation) const
+{
+	if (!Mesh->DoesSocketExist(FirstPersonLeftHandSocketName))
+	{
+		return false;
+	}
+	OutLocation = Mesh->GetSocketLocation(FirstPersonLeftHandSocketName);
+	return true;
+}
+
 void AHuntWeapon::Fire(const FRotator& AimRotation)
 {
 	if (!Definition || !Definition->ProjectileClass)

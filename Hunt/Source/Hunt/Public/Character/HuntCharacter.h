@@ -30,14 +30,24 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void NotifyControllerChanged() override;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
+
+	// 내 화면에만 보이는 1인칭 팔(카메라에 붙음). 메시·애님 BP는 BP에서 정한다
+	// 1인칭 애니메이션(LPSP 원본 리타깃)은 메시 공간이 곧 카메라 공간이라(머리 = 원점, +Y = 정면) 카메라에 그대로 붙인다
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh")
+	TObjectPtr<USkeletalMeshComponent> FirstPersonArms;
+
+	// 내 화면에만 보이는 하체. 전신 메시 포즈를 그대로 따라간다(Leader Pose)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh")
+	TObjectPtr<USkeletalMeshComponent> FirstPersonLegs;
 
 	// 카메라가 따라갈 뼈
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	FName CameraHeadBone = TEXT("head");
 
-	// 머리 뼈에서 시선 방향으로 얼마나 앞에 둘지(cm). 몸이나 머리가 화면에 걸리면 늘린다
+	// 머리 뼈에서 시선 방향으로 얼마나 앞에 둘지(cm). 아래를 볼 때 하체 메시의 허리 잘린 면이 보이면 늘린다
 	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "0.0"))
 	float CameraForwardOffset = 15.f;
 
@@ -45,17 +55,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "0.0"))
 	float CameraFollowSpeed = 15.f;
 
-	// 조준 시 카메라가 맞춰질 총의 가늠자 소켓
+	// 조준 시 화면 중앙에 올 총의 가늠자 소켓. 조준하는 동안 팔 전체를 옮겨 이 소켓을 시선 축 위에 둔다
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim")
 	FName SightSocketName = TEXT("Socket_Sight");
-
-	// 조준 시 가늠자에서 눈까지 거리(cm). 너무 작으면 니어 클립(10cm)에 총이 잘린다
-	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim", meta = (ClampMin = "0.0"))
-	float SightCameraDistance = 15.f;
-
-	// 조준 중 카메라가 가늠자 위치를 따라가는 속도. 낮을수록 걷기·회전 때 총이 화면에서 더 흔들린다 (0 = 가늠자에 고정)
-	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim", meta = (ClampMin = "0.0"))
-	float AimCameraFollowSpeed = 30.f;
 
 	// 조준 시 시야각(가늠쇠 기준. 스코프 배율은 M3에서)
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim", meta = (ClampMin = "5.0", ClampMax = "170.0"))
@@ -89,8 +91,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> DefaultWeapon;
 
+	// 다른 사람이 보는 전신 손 소켓
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	FName WeaponSocketName = TEXT("HandGrip_R");
+
+	// 1인칭 팔에서 총을 붙일 뼈. LPSP 애니메이션은 총을 ik_hand_gun(SOCKET_Weapon)으로 움직이고 손은 그 총을 잡는다
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	FName FirstPersonWeaponBone = TEXT("ik_hand_gun");
+
+	// ik_hand_gun 기준 총 위치(회전 없음). AR4 손잡이가 LPSP 손에 오도록 잰 값, 총 메시마다 다르다
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	FVector FirstPersonWeaponOffset = FVector(-2.03f, -8.35f, -0.1f);
 
 	// 장착 중인 총. 없으면 맨손
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Weapon")
@@ -103,6 +114,7 @@ private:
 	void Fire();
 	void StartAim();
 	void StopAim();
+	void AttachWeaponToHands();
 
 	// shortcut: 조준 상태를 복제하지 않아 다른 플레이어에게는 조준 자세가 안 보인다, 멀티 점검 때 복제 추가
 	bool bWantsToAim = false;
@@ -110,11 +122,11 @@ private:
 	// 조준 진행도(0~1, 선형). 총의 AimDownSightsTime 동안 변한다
 	float AimAlpha = 0.f;
 
-	// 머리를 보간으로 따라가는 지향사격 카메라 위치(캡슐 기준). 조준 위치와 블렌드한다
+	// 머리를 보간으로 따라가는 카메라 위치(캡슐 기준)
 	FVector HeadCameraLocation = FVector::ZeroVector;
 
-	// 가늠자 뒤를 보간으로 따라가는 조준 카메라 위치(캡슐 기준). 0이면 조준 시작 전(카메라가 캡슐 중심에 올 일은 없음)
-	FVector AimCameraLocation = FVector::ZeroVector;
+	// BP에 정한 팔의 카메라 기준 위치. 조준 정렬은 여기서부터 옮긴다
+	FTransform ArmsBaseTransform = FTransform::Identity;
 
 	float DefaultFOV = 90.f;
 };

@@ -66,7 +66,7 @@ theHunter: Call of the Wild 스타일 사냥 게임에 **총기 부착물(스코
 | 엔진 | Unreal Engine 5.8.x |
 | 생성 방식 | Games → Blank → C++ (Starter Content 없음) |
 | 프로젝트(모듈) 이름 | `Hunt` (`HUNT_API`, `HuntCharacter` 등). 게임 제목은 나중에 따로 정함 |
-| 시점·캐릭터 | 1인칭 + **전신 메시 하나로 구성한 풀바디 캐릭터** (멀티 대비) |
+| 시점·캐릭터 | 1인칭 + **메시 3개(전신·1인칭 팔·하체)로 구성한 배그식 캐릭터** (멀티 대비) |
 | 캐릭터 에셋 | 기본 Manny (`UE5_Mannequin_Skeleton`). 5.8 Third Person 임시 프로젝트에서 에셋만 Migrate, 템플릿 코드는 가져오지 않음 |
 | 입력 | Enhanced Input (`Hunt.Build.cs`에 `EnhancedInput` 모듈 필요) |
 
@@ -86,8 +86,8 @@ theHunter: Call of the Wild 스타일 사냥 게임에 **총기 부착물(스코
 
 - **스탯:** 반동, 탄퍼짐, 조준 속도(ADS), 스코프 배율, 소음. 필요한게 있다면 사용자에게 필요를 설명한후 허락을 하면 추가한다.
 - **스코프 배율:** FOV 축소 + 렌즈 머티리얼 마스킹. SceneCapture(PIP)는 성능 비용 때문에 쓰지 않는다.
-- **소켓 이름 규칙:** `Socket_Scope`, `Socket_Grip`, `Socket_Muzzle`, `Socket_Stock`, ADS 정렬용 `Socket_Sight`, 왼손 IK 목표 `Socket_LeftHand`(총 메시마다 추가). `Socket_Sight`는 기능이 없어도 M1부터 이름을 약속해 둔다.
-- **풀바디 캐릭터:** 배그식 트루 1인칭. 카메라 위치는 매 Tick 머리 뼈(+시선 방향 앞 오프셋)를 보간으로 따라가고 회전은 컨트롤 회전을 쓴다(머리 흔들림 완화, 몸통은 항상 카메라 뒤·아래). 1인칭 전용 팔 메시는 쓰지 않는다. 머리는 숨기지 않는다(그림자에서 머리가 사라짐). 총은 에임 오프셋으로 시선 피치를 따라온다. 가장 큰 난관은 ADS 정렬(Aim Offset + 손 위치 IK)이며 M3 스코프 배율 작업에서 핵심이 된다.
+- **소켓 이름 규칙:** `Socket_Scope`, `Socket_Grip`, `Socket_Muzzle`, `Socket_Stock`, ADS 정렬용 `Socket_Sight`, 왼손 IK 목표 `Socket_LeftHand`(3인칭, 총 메시마다 추가), 1인칭 왼손목 위치 `Socket_LeftHand_FP`(1인칭 그립 포즈의 hand_l이 닿는 곳, 총·손잡이 메시마다 추가). `Socket_Sight`는 기능이 없어도 M1부터 이름을 약속해 둔다.
+- **1인칭 캐릭터 (배그식, 메시 3개):** 전신 메시는 다른 사람에게만 보이고 내 화면에는 그림자만 남긴다(`WorldSpaceRepresentation`). 내 화면에는 카메라에 붙은 **1인칭 팔**(`SK_Arms`, `FirstPerson`, 1인칭 ABP)과 전신 포즈를 Leader Pose로 따라가는 **하체**(`SK_Legs`)만 보인다. 카메라 위치는 전신의 머리 뼈를 보간으로 따라가고 회전은 컨트롤 회전을 쓴다. 내 총은 1인칭 팔에, 다른 사람 총은 전신 손에 붙는다. 총이 카메라에 고정되므로 걸을 때 흔들림은 1인칭 애니메이션에 들어 있는 것만 보인다. 1인칭 팔 애니메이션은 LPSP 원본을 손·`ik_hand_gun`의 메시 공간 위치 그대로 Manny로 리타깃한 것(`Asset/Characters/LPSP/AnimationsFP`, 리타깃 원본·설정은 정리함)이라 메시 공간이 곧 카메라 공간(머리 = 원점, +Y = 정면)이다. 그래서 팔은 카메라에 고정(Yaw -90)으로 붙이고, 내 총은 LPSP처럼 `ik_hand_gun`에 붙인다. 1인칭 왼손은 손 모양·팔꿈치를 그립 포즈 애니메이션(`Asset/Characters/FirstPerson/A_FP_Rifle_*_Pose_Grip`)이 정하고, 손목 위치만 Two Bone IK로 총의 `Socket_LeftHand_FP`에 맞춘다(소켓이 없으면 IK 끔). ADS 정렬(가늠자를 화면 중앙에)은 팔 자세는 그대로 두고 팔 컴포넌트 전체를 옮겨 맞춘다(`Socket_Sight`). 애님 인스턴스는 메시별로 나눈다: 전신 `UHuntAnimInstance`(`ABP_Hunt_ThirdPerson`), 1인칭 팔 `UHuntFirstPersonAnimInstance`(`ABP_Hunt_FirstPersonArms`).
 
 ## 마일스톤
 
@@ -95,7 +95,7 @@ theHunter: Call of the Wild 스타일 사냥 게임에 **총기 부착물(스코
 
 | 단계 | 내용 | 완료 기준 |
 |---|---|---|
-| **M1** 총기 기본 + 캐릭터 | ① 풀바디 1인칭 캐릭터 ② 총 장착·발사 ③ 총 2종 차별화 ④ PIE 2인 점검 | 아래를 내려다보면 몸이 보이고 카메라가 몸과 겹치지 않음. 손 소켓에 총이 붙고 발사하면 표적에 맞음. 두 총의 반동·발사 느낌이 확실히 다름. PIE 2인 실행 시 서로의 몸과 총이 보임 |
+| **M1** 총기 기본 + 캐릭터 | ① 배그식 1인칭 캐릭터(팔·하체·전신) ② 총 장착·발사 ③ 총 2종 차별화 ④ PIE 2인 점검 | 아래를 내려다보면 하체와 전신 그림자가 보이고, 걸을 때 총이 화면에서 튀지 않음. 손 소켓에 총이 붙고 발사하면 표적에 맞음. 두 총의 반동·발사 느낌이 확실히 다름. PIE 2인 실행 시 서로의 몸과 총이 보임 |
 | **M2** 부착물 시스템 (핵심) | 슬롯 4종, 부착물 6개 | 에디터에서 부착물을 바꾸면 메시가 붙고 스탯이 바뀌며, 호환 안 되는 부착물은 거부됨 |
 | **M3** 개조 UI·작업대 | 총기 회전 보기, 슬롯 선택, 스탯 비교 | 마우스만으로 개조를 끝낼 수 있음 |
 | **M4** 사냥 루프 | 동물 1종(사슴), 단순 AI(배회 → 경계 → 도주), 부위별 데미지 | 사슴을 발견해 쏘고 잡을 수 있음 |

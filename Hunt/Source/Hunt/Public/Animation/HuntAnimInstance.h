@@ -37,6 +37,22 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bIsFalling = false;
 
+	// 뒤쪽 반구로 이동 중이면 true. 앞/뒤 이동 블렌드스페이스를 고른다(옆걸음 애니메이션이 앞뒤로 엉덩이 방향이 달라서)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	bool bMovingBackward = false;
+
+	// 앞/뒤 블렌드스페이스에 넣는 방향. Direction을 각자 담당 반구로 접은 값이라(앞쪽 180→0, 뒤쪽 0→180)
+	// 전환 블렌드 중에도 샘플 범위 밖(옆걸음 좌우 50:50 섞임 등)을 읽지 않는다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float ForwardDirection = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float BackwardDirection = 180.f;
+
+	// ±90도 근처에서 앞/뒤가 오락가락하지 않도록 이만큼 넘어가야 바뀐다(도)
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0", ClampMax = "45.0"))
+	float BackwardHysteresis = 10.f;
+
 	// 제자리 회전(Lyra 방식): 서 있을 때 액터는 시선을 따라 돌지만 몸은 이만큼 반대로 돌려 제자리에 둔다
 	// ABP의 Rotate Root Bone(Yaw)에 넣는다. +면 몸이 시선보다 오른쪽을 보고 있다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TurnInPlace")
@@ -76,7 +92,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
 	float RootYawBlendOutSpeed = 10.f;
 
-	// 총이 이 메시에 붙어 있으면 true. 내 전신은 총이 1인칭 팔에 있으니 false(맨손 자세로 그림자만 낸다)
+	// 전신 손의 총(BodyWeapon)이 이 메시에 붙어 있으면 true
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	bool bHasWeapon = false;
 

@@ -23,6 +23,7 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	AHuntWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
+	AHuntWeapon* GetBodyWeapon() const { return BodyWeapon; }
 
 	// 조준 블렌드(0 = 지향사격, 1 = 완전 조준). 시작·끝이 부드럽게 감속되는 값이라 카메라와 애님이 같이 쓴다
 	float GetAimBlend() const { return FMath::SmoothStep(0.f, 1.f, AimAlpha); }
@@ -62,6 +63,22 @@ protected:
 	// 조준 시 시야각(가늠쇠 기준. 스코프 배율은 M3에서)
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim", meta = (ClampMin = "5.0", ClampMax = "170.0"))
 	float AimFOV = 70.f;
+
+	// 무기 흔들림: 시선 회전 속도(도/초)에 곱해 총을 반대로 기울이는 비율
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sway", meta = (ClampMin = "0.0"))
+	float SwayAmount = 0.02f;
+
+	// 흔들림 최대 각도(도)
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sway", meta = (ClampMin = "0.0"))
+	float MaxSwayAngle = 3.f;
+
+	// 흔들림이 목표를 따라가고 제자리로 돌아오는 속도. 낮을수록 총이 늦게 따라온다
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sway", meta = (ClampMin = "0.0"))
+	float SwayInterpSpeed = 8.f;
+
+	// 완전 조준 시 흔들림 비율 (가늠자가 화면 중앙에서 크게 벗어나지 않게)
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sway", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AimSwayScale = 0.3f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> MoveAction;
@@ -103,9 +120,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	FVector FirstPersonWeaponOffset = FVector(-2.03f, -8.35f, -0.1f);
 
-	// 장착 중인 총. 없으면 맨손
+	// 장착 중인 총(발사용). 1인칭 팔에 붙고 내 화면에만 보인다. 없으면 맨손
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Weapon")
 	TObjectPtr<AHuntWeapon> EquippedWeapon;
+
+	// 전신 손에 든 같은 총. 다른 사람에게 보이고 내 화면에는 그림자만 남는다
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Weapon")
+	TObjectPtr<AHuntWeapon> BodyWeapon;
 
 private:
 	void Move(const FInputActionValue& Value);
@@ -114,7 +135,7 @@ private:
 	void Fire();
 	void StartAim();
 	void StopAim();
-	void AttachWeaponToHands();
+	void UpdateWeaponVisibility();
 
 	// shortcut: 조준 상태를 복제하지 않아 다른 플레이어에게는 조준 자세가 안 보인다, 멀티 점검 때 복제 추가
 	bool bWantsToAim = false;
@@ -127,6 +148,10 @@ private:
 
 	// BP에 정한 팔의 카메라 기준 위치. 조준 정렬은 여기서부터 옮긴다
 	FTransform ArmsBaseTransform = FTransform::Identity;
+
+	// 현재 무기 흔들림(카메라 기준 회전)과 회전 속도 계산용 직전 컨트롤 회전
+	FRotator WeaponSway = FRotator::ZeroRotator;
+	FRotator PrevControlRotation = FRotator::ZeroRotator;
 
 	float DefaultFOV = 90.f;
 };

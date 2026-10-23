@@ -69,11 +69,23 @@ void AHuntCharacter::BeginPlay()
 	if (DefaultWeapon)
 	{
 		// shortcut: 서버·클라이언트가 각자 로컬로 스폰한다(복제 안 함), M1-④ 멀티 점검 때 서버 스폰 + 복제로 교체
-		AHuntWeapon* Weapon = GetWorld()->SpawnActorDeferred<AHuntWeapon>(AHuntWeapon::StaticClass(), FTransform::Identity, this, this);
-		Weapon->Definition = DefaultWeapon; // OnConstruction(FinishSpawning)에서 메시가 적용되도록 먼저 설정
-		Weapon->FinishSpawning(FTransform::Identity);
-		EquippedWeapon = Weapon;
-		AttachWeaponToHands();
+		auto SpawnWeapon = [this]()
+		{
+			AHuntWeapon* Weapon = GetWorld()->SpawnActorDeferred<AHuntWeapon>(AHuntWeapon::StaticClass(), FTransform::Identity, this, this);
+			Weapon->Definition = DefaultWeapon; // OnConstruction(FinishSpawning)에서 메시가 적용되도록 먼저 설정
+			Weapon->FinishSpawning(FTransform::Identity);
+			return Weapon;
+		};
+		EquippedWeapon = SpawnWeapon();
+		EquippedWeapon->GetMesh()->SetFirstPersonPrimitiveType(EFirstPersonPrimitiveType::FirstPerson);
+		EquippedWeapon->AttachToComponent(FirstPersonArms, FAttachmentTransformRules::SnapToTargetNotIncludingScale, FirstPersonWeaponBone);
+		EquippedWeapon->GetRootComponent()->SetRelativeLocationAndRotation(FirstPersonWeaponOffset, FRotator::ZeroRotator);
+
+		// 전신 메시 설정을 따른다: 기본은 내 화면에서 숨기고 그림자만 남김, 3인칭 테스트 BP(None)에서는 보임
+		BodyWeapon = SpawnWeapon();
+		BodyWeapon->GetMesh()->SetFirstPersonPrimitiveType(GetMesh()->FirstPersonPrimitiveType);
+		BodyWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocketName);
+		UpdateWeaponVisibility();
 	}
 }
 
@@ -82,29 +94,19 @@ void AHuntCharacter::NotifyControllerChanged()
 	Super::NotifyControllerChanged();
 
 	// BeginPlay 뒤에 빙의되면 그때 내 캐릭터인지 알 수 있다
-	AttachWeaponToHands();
+	UpdateWeaponVisibility();
 }
 
-void AHuntCharacter::AttachWeaponToHands()
+void AHuntCharacter::UpdateWeaponVisibility()
 {
 	if (!EquippedWeapon)
 	{
 		return;
 	}
 
-	// 내 캐릭터는 1인칭 팔에, 다른 사람 캐릭터는 전신 손에 든다
-	// shortcut: 내 화면에서는 내 그림자에 총이 안 생긴다(FirstPerson은 그림자 없음), 필요하면 총을 두 정(팔용·전신용)으로 나눈다
-	const bool bFirstPerson = IsLocallyControlled();
-	EquippedWeapon->GetMesh()->SetFirstPersonPrimitiveType(bFirstPerson ? EFirstPersonPrimitiveType::FirstPerson : EFirstPersonPrimitiveType::None);
-	if (bFirstPerson)
-	{
-		EquippedWeapon->AttachToComponent(FirstPersonArms, FAttachmentTransformRules::SnapToTargetNotIncludingScale, FirstPersonWeaponBone);
-		EquippedWeapon->GetRootComponent()->SetRelativeLocationAndRotation(FirstPersonWeaponOffset, FRotator::ZeroRotator);
-	}
-	else
-	{
-		EquippedWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocketName);
-	}
+	// 1인칭 팔의 총은 내 캐릭터에서만 보인다. 다른 사람 캐릭터는 전신 손의 총(BodyWeapon)만 보인다
+	// 팔을 숨기면(3인칭 테스트 BP) 붙어 있는 총 액터는 같이 숨겨지지 않으므로 따로 숨긴다
+	EquippedWeapon->SetActorHiddenInGame(!IsLocallyControlled() || FirstPersonArms->bHiddenInGame);
 }
 
 void AHuntCharacter::Tick(float DeltaSeconds)
@@ -145,6 +147,24 @@ void AHuntCharacter::Tick(float DeltaSeconds)
 		const FVector SightInCamera = ArmsToCamera.TransformPosition(SightInArms);
 		ArmsToCamera.AddToTranslation(-FVector(0.f, SightInCamera.Y, SightInCamera.Z) * AimBlend);
 	}
+
+	// 무기 흔들림: 시선을 돌린 반대 방향으로 총을 기울였다가 보간으로 제자리로 돌린다
+	const FRotator ControlRotation = GetControlRotation();
+	if (DeltaSeconds > 0.f)
+	{
+		const FRotator LookSpeed = (ControlRotation - PrevControlRotation).GetNormalized() * (1.f / DeltaSeconds);
+		const float TargetPitch = FMath::Clamp(-LookSpeed.Pitch * SwayAmount, -MaxSwayAngle, MaxSwayAngle);
+		const float TargetYaw = FMath::Clamp(-LookSpeed.Yaw * SwayAmount, -MaxSwayAngle, MaxSwayAngle);
+		// 좌우로 돌릴 때 살짝 기울여 무게감을 준다
+		WeaponSway = FMath::RInterpTo(WeaponSway, FRotator(TargetPitch, TargetYaw, TargetYaw * 0.5f), DeltaSeconds, SwayInterpSpeed);
+	}
+	PrevControlRotation = ControlRotation;
+
+	// 총(ik_hand_gun)을 중심으로 돌려 총이 화면을 가로지르지 않고 제자리에서 기울게 한다. 조준 정렬 뒤에 적용
+	const FVector PivotInArms = FirstPersonArms->GetComponentTransform().InverseTransformPosition(FirstPersonArms->GetSocketLocation(FirstPersonWeaponBone));
+	const FVector Pivot = ArmsToCamera.TransformPosition(PivotInArms);
+	const FRotator Sway = WeaponSway * FMath::Lerp(1.f, AimSwayScale, AimBlend);
+	ArmsToCamera = ArmsToCamera * FTransform(-Pivot) * FTransform(Sway) * FTransform(Pivot);
 	FirstPersonArms->SetRelativeTransform(ArmsToCamera);
 }
 

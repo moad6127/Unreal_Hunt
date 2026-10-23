@@ -35,7 +35,25 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	bShouldMove = GroundSpeed > 3.f && !Movement->GetCurrentAcceleration().IsNearlyZero();
 	bIsFalling = Movement->IsFalling();
 
-	const AHuntWeapon* Weapon = Character->GetEquippedWeapon();
+	// 반대 반구의 방향은 앞뒤로 뒤집어 접는다(예: -120 → 앞쪽 -60). 두 값 모두 끊김 없이 이어진다
+	const float AbsDirection = FMath::Abs(Direction);
+	const float MirroredDirection = (Direction < 0.f ? -1.f : 1.f) * (180.f - AbsDirection);
+	ForwardDirection = AbsDirection <= 90.f ? Direction : MirroredDirection;
+	BackwardDirection = AbsDirection >= 90.f ? Direction : MirroredDirection;
+
+	if (bShouldMove)
+	{
+		if (AbsDirection > 90.f + BackwardHysteresis)
+		{
+			bMovingBackward = true;
+		}
+		else if (AbsDirection < 90.f - BackwardHysteresis)
+		{
+			bMovingBackward = false;
+		}
+	}
+
+	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
 	bHasWeapon = Weapon && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent();
 	AimAlpha = Character->GetAimBlend();
 	if (bHasWeapon)

@@ -104,6 +104,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Movement")
 	float RunSpeed = 600.f;
 
+	// 옆·뒤로 갈 때 최대 속도 비율(정면 = 1). 이동 애니메이션 실제 속도(옆 약 0.75, 뒤 약 0.6배)에 맞춰 발 미끄러짐을 줄인다
+	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float StrafeSpeedScale = 0.75f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float BackwardSpeedScale = 0.6f;
+
 	// BeginPlay에서 이 총을 스폰해 손에 든다. 비워두면 맨손
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> DefaultWeapon;
@@ -136,6 +143,9 @@ private:
 	void StartAim();
 	void StopAim();
 	void UpdateWeaponVisibility();
+
+	// 달리기 토글 상태. 실제 최대 속도는 Tick에서 이동 방향 비율을 곱해 정한다
+	bool bRunning = false;
 
 	// shortcut: 조준 상태를 복제하지 않아 다른 플레이어에게는 조준 자세가 안 보인다, 멀티 점검 때 복제 추가
 	bool bWantsToAim = false;

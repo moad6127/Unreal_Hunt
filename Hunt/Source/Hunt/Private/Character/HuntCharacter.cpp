@@ -44,6 +44,12 @@ AHuntCharacter::AHuntCharacter()
 	FirstPersonLegs->SetOnlyOwnerSee(true);
 	FirstPersonLegs->SetCastShadow(false);
 	FirstPersonLegs->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// 가감속을 완만하게(엔진 기본 2048/2048/8): 방향을 뒤집을 때 속도·방향이 한순간에 바뀌지 않아 이동 애니메이션 전환이 부드럽다
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	Movement->MaxAcceleration = 1200.f;
+	Movement->BrakingDecelerationWalking = 800.f;
+	Movement->GroundFriction = 4.f;
 }
 
 void AHuntCharacter::BeginPlay()
@@ -112,6 +118,19 @@ void AHuntCharacter::UpdateWeaponVisibility()
 void AHuntCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// 최대 속도 = 걷기/달리기 속도 × 입력 방향 비율(정면 1 → 옆 StrafeSpeedScale → 뒤 BackwardSpeedScale)
+	// 넘친 속도는 이동 컴포넌트가 감속으로 줄인다. 입력이 없을 때는 직전 값을 유지한다
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	const FVector InputDirection = Movement->GetCurrentAcceleration().GetSafeNormal2D();
+	if (!InputDirection.IsNearlyZero())
+	{
+		const float Angle = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(GetActorForwardVector().GetSafeNormal2D(), InputDirection), -1.f, 1.f)));
+		const float DirectionScale = Angle <= 90.f
+			? FMath::Lerp(1.f, StrafeSpeedScale, Angle / 90.f)
+			: FMath::Lerp(StrafeSpeedScale, BackwardSpeedScale, (Angle - 90.f) / 90.f);
+		Movement->MaxWalkSpeed = (bRunning ? RunSpeed : WalkSpeed) * DirectionScale;
+	}
 
 	// 다른 플레이어의 캐릭터는 내 화면 카메라가 아니므로 갱신하지 않는다
 	if (!IsLocallyControlled())
@@ -203,8 +222,7 @@ void AHuntCharacter::Look(const FInputActionValue& Value)
 
 void AHuntCharacter::ToggleRun()
 {
-	UCharacterMovementComponent* Movement = GetCharacterMovement();
-	Movement->MaxWalkSpeed = (Movement->MaxWalkSpeed == RunSpeed) ? WalkSpeed : RunSpeed;
+	bRunning = !bRunning;
 }
 
 void AHuntCharacter::Fire()

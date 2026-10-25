@@ -62,8 +62,9 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		LeftHandIKLocation = HandTransform.InverseTransformPosition(Weapon->GetLeftHandGripLocation(AimAlpha));
 	}
 
-	// GetBaseAimRotation은 다른 플레이어 캐릭터에서도 복제된 피치를 돌려준다
-	AimPitch = FRotator::NormalizeAxis(Character->GetBaseAimRotation().Pitch);
+	// 컨트롤러가 있으면 컨트롤 회전(GetBaseAimRotation은 플레이어면 카메라 회전이라 고정 카메라에서 안 변함), 다른 플레이어 캐릭터는 복제된 피치
+	const FRotator AimRotation = Character->GetController() ? Character->GetControlRotation() : Character->GetBaseAimRotation();
+	AimPitch = FRotator::NormalizeAxis(AimRotation.Pitch);
 
 	UpdateTurnInPlace(DeltaSeconds);
 }

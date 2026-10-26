@@ -41,6 +41,12 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	ForwardDirection = AbsDirection <= 90.f ? Direction : MirroredDirection;
 	BackwardDirection = AbsDirection >= 90.f ? Direction : MirroredDirection;
 
+	// 블렌드스페이스의 최고 속도 샘플이 정면·옆·뒤(0/90/180도)에만 있어서 그 사이는 선형으로 섞는다
+	const float RunAnimSpeed = AbsDirection <= 90.f
+		? FMath::Lerp(ForwardRunAnimSpeed, SideRunAnimSpeed, AbsDirection / 90.f)
+		: FMath::Lerp(SideRunAnimSpeed, BackwardRunAnimSpeed, (AbsDirection - 90.f) / 90.f);
+	LocomotionPlayRate = FMath::Max(1.f, GroundSpeed / RunAnimSpeed);
+
 	if (bShouldMove)
 	{
 		if (AbsDirection > 90.f + BackwardHysteresis)

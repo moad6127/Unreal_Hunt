@@ -53,6 +53,22 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0", ClampMax = "45.0"))
 	float BackwardHysteresis = 10.f;
 
+	// 이동 블렌드스페이스의 재생 속도. 블렌드스페이스는 가장 빠른 달리기 샘플 속도에서 멈추므로
+	// 그보다 빠르게 움직이면 그만큼 빨리 재생해 다리가 몸을 따라오게 한다 (1 미만으로는 안 내림)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float LocomotionPlayRate = 1.f;
+
+	// 가장 빠른 이동 애니메이션 자체의 속도 = BS_Hunt_Loco_Fwd/Bwd의 최고 Speed 샘플 값 (정면 ALS 질주 / 옆·뒤 ALS 달리기)
+	// shortcut: 블렌드스페이스 샘플 값을 옮겨 적은 것, 샘플 속도를 바꾸면 여기도 맞춰야 한다
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
+	float ForwardRunAnimSpeed = 600.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
+	float SideRunAnimSpeed = 350.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
+	float BackwardRunAnimSpeed = 350.f;
+
 	// 제자리 회전(Lyra 방식): 서 있을 때 액터는 시선을 따라 돌지만 몸은 이만큼 반대로 돌려 제자리에 둔다
 	// ABP의 Rotate Root Bone(Yaw)에 넣는다. +면 몸이 시선보다 오른쪽을 보고 있다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TurnInPlace")

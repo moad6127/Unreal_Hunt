@@ -86,6 +86,7 @@ theHunter: Call of the Wild 스타일 사냥 게임에 **총기 부착물(스코
 
 - **스탯:** 반동, 탄퍼짐, 조준 속도(ADS), 스코프 배율, 소음. 필요한게 있다면 사용자에게 필요를 설명한후 허락을 하면 추가한다.
 - **스코프 배율:** FOV 축소 + 렌즈 머티리얼 마스킹. SceneCapture(PIP)는 성능 비용 때문에 쓰지 않는다.
+- **조준(ADS) 중 이동 제한 (예정):** ADS 중에는 달리기를 할 수 없고, 걷기 속도도 평소보다 더 낮춘다. 따라서 달리기 애니메이션은 조준하지 않은 상태(허리 사격 자세)에서만 쓰인다.
 - **소켓 이름 규칙:** `Socket_Scope`, `Socket_Grip`, `Socket_Muzzle`, `Socket_Stock`, ADS 정렬용 `Socket_Sight`, 왼손 IK 목표 `Socket_LeftHand`(3인칭, 총 메시마다 추가), 1인칭 왼손목 위치 `Socket_LeftHand_FP`(1인칭 그립 포즈의 hand_l이 닿는 곳, 총·손잡이 메시마다 추가). `Socket_Sight`는 기능이 없어도 M1부터 이름을 약속해 둔다.
 - **1인칭 캐릭터 (배그식, 메시 3개):** 전신 메시는 다른 사람에게만 보이고 내 화면에는 그림자만 남긴다(`WorldSpaceRepresentation`). 내 화면에는 카메라에 붙은 **1인칭 팔**(`SK_Arms`, `FirstPerson`, 1인칭 ABP)과 전신 포즈를 Leader Pose로 따라가는 **하체**(`SK_Legs`)만 보인다. 카메라 위치는 전신의 머리 뼈를 보간으로 따라가고 회전은 컨트롤 회전을 쓴다. 내 총은 1인칭 팔에, 다른 사람 총은 전신 손에 붙는다. 총이 카메라에 고정되므로 걸을 때 흔들림은 1인칭 애니메이션에 들어 있는 것만 보인다. 1인칭 팔 애니메이션은 LPSP 원본을 손·`ik_hand_gun`의 메시 공간 위치 그대로 Manny로 리타깃한 것(`Asset/Characters/LPSP/AnimationsFP`, 리타깃 원본·설정은 정리함)이라 메시 공간이 곧 카메라 공간(머리 = 원점, +Y = 정면)이다. 그래서 팔은 카메라에 고정(Yaw -90)으로 붙이고, 내 총은 LPSP처럼 `ik_hand_gun`에 붙인다. 1인칭 왼손은 손 모양·팔꿈치를 그립 포즈 애니메이션(`Asset/Characters/FirstPerson/A_FP_Rifle_*_Pose_Grip`)이 정하고, 손목 위치만 Two Bone IK로 총의 `Socket_LeftHand_FP`에 맞춘다(소켓이 없으면 IK 끔). ADS 정렬(가늠자를 화면 중앙에)은 팔 자세는 그대로 두고 팔 컴포넌트 전체를 옮겨 맞춘다(`Socket_Sight`). 애님 인스턴스는 메시별로 나눈다: 전신 `UHuntAnimInstance`(`ABP_Hunt_ThirdPerson`), 1인칭 팔 `UHuntFirstPersonAnimInstance`(`ABP_Hunt_FirstPersonArms`).
 

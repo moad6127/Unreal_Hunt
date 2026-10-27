@@ -28,6 +28,15 @@ public:
 	// 조준 블렌드(0 = 지향사격, 1 = 완전 조준). 시작·끝이 부드럽게 감속되는 값이라 카메라와 애님이 같이 쓴다
 	float GetAimBlend() const { return FMath::SmoothStep(0.f, 1.f, AimAlpha); }
 
+	// 발사 반동. Kick만큼 조준선을 RecoilSmoothTime 동안 올리고, 사격을 멈추면 RecoilRecovery 비율만큼 되돌린다
+	void AddRecoil(const FRotator& Kick);
+
+	// 장착한 총의 킥(화면에 보이는 총 반동)을 한 발 더한다. 연사하면 쌓이고 KickRecoverySpeed로 돌아온다
+	void AddWeaponKick();
+
+	// 장착한 총의 발사 애니메이션을 1인칭 팔 슬롯에 재생한다. 연사 중에는 매 발 처음부터 다시 재생
+	void PlayFireAnimation();
+
 
 protected:
 	virtual void BeginPlay() override;
@@ -64,6 +73,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim", meta = (ClampMin = "5.0", ClampMax = "170.0"))
 	float AimFOV = 70.f;
 
+	// 총 킥이 목표 위치로 튀어 나가는 속도. 높을수록 한 발이 날카롭게 튄다
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Kick", meta = (ClampMin = "0.0"))
+	float KickSnapSpeed = 30.f;
+
 	// 무기 흔들림: 시선 회전 속도(도/초)에 곱해 총을 반대로 기울이는 비율
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sway", meta = (ClampMin = "0.0"))
 	float SwayAmount = 0.02f;
@@ -79,6 +92,10 @@ protected:
 	// 완전 조준 시 흔들림 비율 (가늠자가 화면 중앙에서 크게 벗어나지 않게)
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sway", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float AimSwayScale = 0.3f;
+
+	// 사격을 멈춘 뒤 반동이 원래 조준점으로 돌아오는 속도. 높을수록 빨리 돌아온다
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Recoil", meta = (ClampMin = "0.0"))
+	float RecoilRecoverySpeed = 6.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> MoveAction;
@@ -115,6 +132,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> DefaultWeapon;
 
+	// 1인칭 팔 ABP에서 발사 애니메이션을 받는 슬롯
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	FName FireSlotName = TEXT("DefaultSlot");
+
 	// 다른 사람이 보는 전신 손 소켓
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	FName WeaponSocketName = TEXT("HandGrip_R");
@@ -139,7 +160,8 @@ private:
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void ToggleRun();
-	void Fire();
+	void StartFire();
+	void StopFire();
 	void StartAim();
 	void StopAim();
 	void UpdateWeaponVisibility();
@@ -159,9 +181,19 @@ private:
 	// BP에 정한 팔의 카메라 기준 위치. 조준 정렬은 여기서부터 옮긴다
 	FTransform ArmsBaseTransform = FTransform::Identity;
 
+	// 총 킥(카메라 기준). 목표는 매 발 더해지고 0으로 돌아가며, 현재 값이 목표를 빠르게 따라간다
+	FVector KickTargetLocation = FVector::ZeroVector;
+	FRotator KickTargetRotation = FRotator::ZeroRotator;
+	FVector KickLocation = FVector::ZeroVector;
+	FRotator KickRotation = FRotator::ZeroRotator;
+
 	// 현재 무기 흔들림(카메라 기준 회전)과 회전 속도 계산용 직전 컨트롤 회전
 	FRotator WeaponSway = FRotator::ZeroRotator;
 	FRotator PrevControlRotation = FRotator::ZeroRotator;
 
 	float DefaultFOV = 90.f;
+
+	// 아직 조준선에 적용하지 않은 반동과, 사격을 멈추면 되돌릴 반동
+	FRotator PendingRecoil = FRotator::ZeroRotator;
+	FRotator RecoilToRecover = FRotator::ZeroRotator;
 };

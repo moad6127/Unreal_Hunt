@@ -4,10 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Weapon/WeaponDefinition.h"
 #include "HuntWeapon.generated.h"
 
 class USkeletalMeshComponent;
-class UWeaponDefinition;
 
 UCLASS()
 class HUNT_API AHuntWeapon : public AActor
@@ -18,8 +18,16 @@ public:
 	AHuntWeapon();
 	virtual void OnConstruction(const FTransform& Transform) override;
 
-	// 총구에서 AimRotation 방향으로 발사체를 쏜다. 발사 간격이 안 지났으면 무시
-	void Fire(const FRotator& AimRotation);
+	// 방아쇠를 당김. 단발은 한 발(발사 간격이 안 지났으면 무시), 연발은 StopFire까지 FireInterval마다 쏜다
+	void StartFire();
+	void StopFire();
+
+	// 연발로 방아쇠를 누르고 있는 중
+	bool IsAutoFiring() const;
+
+	// 쏘는 중에 바꿔도 안전하도록 연발을 멈춘 뒤 바꾼다
+	UFUNCTION(BlueprintCallable, Category = "Weapon")
+	void SetFireMode(EHuntFireMode NewFireMode);
 
 	USkeletalMeshComponent* GetMesh() const { return Mesh; }
 
@@ -31,6 +39,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> Definition;
+
+	// 시작 값은 Definition->FireMode. 실행 중에는 SetFireMode로 바꾼다
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Weapon")
+	EHuntFireMode FireMode = EHuntFireMode::Single;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
@@ -52,5 +64,10 @@ protected:
 	FName FirstPersonLeftHandSocketName = TEXT("Socket_LeftHand_FP");
 
 private:
+	// 총구에서 소유자의 컨트롤 회전(카메라가 보는 방향)으로 발사체를 쏜다
+	void Shoot();
+
 	double LastFireTime = -1.0e9;
+	FTimerHandle AutoFireTimer;
+	bool bFirstShot = true;
 };

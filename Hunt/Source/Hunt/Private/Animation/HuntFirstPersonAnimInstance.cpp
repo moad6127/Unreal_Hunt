@@ -28,6 +28,9 @@ void UHuntFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	AimAlpha = Character->GetAimBlend();
 
 	const AHuntWeapon* Weapon = Character->GetEquippedWeapon();
+	const UWeaponDefinition* Definition = Weapon ? Weapon->Definition.Get() : nullptr;
+	FireAnimationAlpha = Definition ? FMath::Lerp(Definition->HipFireAnimationScale, 1.f, AimAlpha) : 1.f;
+
 	FVector GripLocation;
 	bLeftHandIK = Weapon && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent() && Weapon->GetFirstPersonLeftHandGripLocation(GripLocation);
 	if (bLeftHandIK)

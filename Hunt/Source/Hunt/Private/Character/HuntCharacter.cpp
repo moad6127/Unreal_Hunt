@@ -4,6 +4,7 @@
 #include "Character/HuntCharacter.h"
 #include "EnhancedInputComponent.h"
 #include "InputAction.h"
+#include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -152,6 +153,26 @@ void AHuntCharacter::Tick(float DeltaSeconds)
 	const float AimTarget = (bWantsToAim && Definition) ? 1.f : 0.f;
 	const float AimSpeed = Definition ? 1.f / Definition->AimDownSightsTime : 10.f;
 	AimAlpha = FMath::FInterpConstantTo(AimAlpha, AimTarget, DeltaSeconds, AimSpeed);
+
+	// 반동: 남은 반동을 RecoilSmoothTime에 걸쳐 조준선에 더하고, 다 적용됐고 연사 중이 아니면 되돌릴 몫을 천천히 뺀다
+	if (Controller)
+	{
+		const float SmoothTime = Definition ? Definition->RecoilSmoothTime : 0.f;
+		const FRotator KickStep = SmoothTime > 0.f ? PendingRecoil * FMath::Min(1.f, DeltaSeconds / SmoothTime) : PendingRecoil;
+		PendingRecoil -= KickStep;
+
+		FRotator RecoverStep = FRotator::ZeroRotator;
+		if (PendingRecoil.IsNearlyZero(0.01f) && !(EquippedWeapon && EquippedWeapon->IsAutoFiring()))
+		{
+			RecoverStep = RecoilToRecover * FMath::Min(1.f, DeltaSeconds * RecoilRecoverySpeed);
+			RecoilToRecover -= RecoverStep;
+		}
+
+		if (!KickStep.IsZero() || !RecoverStep.IsZero())
+		{
+			Controller->SetControlRotation(Controller->GetControlRotation() + KickStep - RecoverStep);
+		}
+	}
 	const float AimBlend = GetAimBlend();
 	FirstPersonCamera->SetRelativeLocation(HeadCameraLocation);
 	FirstPersonCamera->SetFieldOfView(FMath::Lerp(DefaultFOV, AimFOV, AimBlend));
@@ -183,10 +204,56 @@ void AHuntCharacter::Tick(float DeltaSeconds)
 	const FVector PivotInArms = FirstPersonArms->GetComponentTransform().InverseTransformPosition(FirstPersonArms->GetSocketLocation(FirstPersonWeaponBone));
 	const FVector Pivot = ArmsToCamera.TransformPosition(PivotInArms);
 	const FRotator Sway = WeaponSway * FMath::Lerp(1.f, AimSwayScale, AimBlend);
-	ArmsToCamera = ArmsToCamera * FTransform(-Pivot) * FTransform(Sway) * FTransform(Pivot);
+
+	// 총 킥: 조준 정렬 뒤에 더해야 정렬이 킥을 지우지 않는다
+	const float KickRecoverySpeed = Definition ? Definition->KickRecoverySpeed : 0.f;
+	KickTargetLocation = FMath::VInterpTo(KickTargetLocation, FVector::ZeroVector, DeltaSeconds, KickRecoverySpeed);
+	KickTargetRotation = FMath::RInterpTo(KickTargetRotation, FRotator::ZeroRotator, DeltaSeconds, KickRecoverySpeed);
+	KickLocation = FMath::VInterpTo(KickLocation, KickTargetLocation, DeltaSeconds, KickSnapSpeed);
+	KickRotation = FMath::RInterpTo(KickRotation, KickTargetRotation, DeltaSeconds, KickSnapSpeed);
+	const float KickScale = Definition ? FMath::Lerp(1.f, Definition->AimKickScale, AimBlend) : 1.f;
+
+	ArmsToCamera = ArmsToCamera * FTransform(-Pivot) * FTransform(Sway + KickRotation * KickScale) * FTransform(Pivot);
+	ArmsToCamera.AddToTranslation(KickLocation * KickScale);
 	FirstPersonArms->SetRelativeTransform(ArmsToCamera);
 }
 
+
+void AHuntCharacter::AddRecoil(const FRotator& Kick)
+{
+	const UWeaponDefinition* Definition = EquippedWeapon ? EquippedWeapon->Definition.Get() : nullptr;
+	PendingRecoil += Kick;
+	RecoilToRecover += Kick * (Definition ? Definition->RecoilRecovery : 0.f);
+}
+
+void AHuntCharacter::AddWeaponKick()
+{
+	const UWeaponDefinition* Definition = EquippedWeapon ? EquippedWeapon->Definition.Get() : nullptr;
+	if (!Definition)
+	{
+		return;
+	}
+
+	// 카메라 기준: -X = 뒤(얼굴 쪽), Pitch + = 총구 위
+	KickTargetLocation.X -= Definition->KickBack;
+	KickTargetRotation += FRotator(Definition->KickPitch, FMath::FRandRange(-Definition->KickYaw, Definition->KickYaw), 0.f);
+}
+
+void AHuntCharacter::PlayFireAnimation()
+{
+	const UWeaponDefinition* Definition = EquippedWeapon ? EquippedWeapon->Definition.Get() : nullptr;
+	UAnimInstance* ArmsAnim = FirstPersonArms->GetAnimInstance();
+	if (!Definition || !ArmsAnim)
+	{
+		return;
+	}
+
+	UAnimSequenceBase* FireAnim = GetAimBlend() > 0.5f ? Definition->AimFireAnimation : Definition->FireAnimation;
+	if (FireAnim)
+	{
+		ArmsAnim->PlaySlotAnimationAsDynamicMontage(FireAnim, FireSlotName, 0.02f, 0.15f);
+	}
+}
 
 void AHuntCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
@@ -198,7 +265,8 @@ void AHuntCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
 	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 	EnhancedInput->BindAction(RunAction, ETriggerEvent::Started, this, &AHuntCharacter::ToggleRun);
-	EnhancedInput->BindAction(FireAction, ETriggerEvent::Started, this, &AHuntCharacter::Fire);
+	EnhancedInput->BindAction(FireAction, ETriggerEvent::Started, this, &AHuntCharacter::StartFire);
+	EnhancedInput->BindAction(FireAction, ETriggerEvent::Completed, this, &AHuntCharacter::StopFire);
 	EnhancedInput->BindAction(AimAction, ETriggerEvent::Started, this, &AHuntCharacter::StartAim);
 	EnhancedInput->BindAction(AimAction, ETriggerEvent::Completed, this, &AHuntCharacter::StopAim);
 }
@@ -225,12 +293,19 @@ void AHuntCharacter::ToggleRun()
 	bRunning = !bRunning;
 }
 
-void AHuntCharacter::Fire()
+void AHuntCharacter::StartFire()
 {
 	if (EquippedWeapon)
 	{
-		// 카메라가 보는 방향(컨트롤 회전)으로 쏜다
-		EquippedWeapon->Fire(GetControlRotation());
+		EquippedWeapon->StartFire();
+	}
+}
+
+void AHuntCharacter::StopFire()
+{
+	if (EquippedWeapon)
+	{
+		EquippedWeapon->StopFire();
 	}
 }
 

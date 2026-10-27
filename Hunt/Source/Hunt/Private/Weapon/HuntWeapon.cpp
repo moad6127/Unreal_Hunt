@@ -2,9 +2,12 @@
 
 
 #include "Weapon/HuntWeapon.h"
+#include "Character/HuntCharacter.h"
 #include "Weapon/HuntProjectile.h"
 #include "Weapon/WeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/Pawn.h"
+#include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
 
 AHuntWeapon::AHuntWeapon()
@@ -22,6 +25,10 @@ void AHuntWeapon::OnConstruction(const FTransform& Transform)
 
 	// 레벨 배치·BP·스폰 모두 Definition의 메시를 따르도록 여기서 설정
 	Mesh->SetSkeletalMesh(Definition ? Definition->Mesh : nullptr);
+	if (Definition)
+	{
+		FireMode = Definition->FireMode;
+	}
 }
 
 FVector AHuntWeapon::GetLeftHandGripLocation(float AimAlpha) const
@@ -41,19 +48,60 @@ bool AHuntWeapon::GetFirstPersonLeftHandGripLocation(FVector& OutLocation) const
 	return true;
 }
 
-void AHuntWeapon::Fire(const FRotator& AimRotation)
+void AHuntWeapon::StartFire()
 {
-	if (!Definition || !Definition->ProjectileClass)
+	if (!Definition)
 	{
+		return;
+	}
+	bFirstShot = true;
+
+	const double Remaining = LastFireTime + Definition->FireInterval - GetWorld()->GetTimeSeconds();
+	if (FireMode == EHuntFireMode::Single)
+	{
+		if (Remaining <= 0.0)
+		{
+			Shoot();
+		}
 		return;
 	}
 
-	const double Now = GetWorld()->GetTimeSeconds();
-	if (Now - LastFireTime < Definition->FireInterval)
+	// 연발: 발사 간격이 남았으면 그만큼 기다렸다가 첫 발
+	if (Remaining <= 0.0)
+	{
+		Shoot();
+		GetWorldTimerManager().SetTimer(AutoFireTimer, this, &AHuntWeapon::Shoot, Definition->FireInterval, true);
+	}
+	else
+	{
+		GetWorldTimerManager().SetTimer(AutoFireTimer, this, &AHuntWeapon::Shoot, Definition->FireInterval, true, Remaining);
+	}
+}
+
+void AHuntWeapon::StopFire()
+{
+	GetWorldTimerManager().ClearTimer(AutoFireTimer);
+}
+
+bool AHuntWeapon::IsAutoFiring() const
+{
+	return GetWorldTimerManager().IsTimerActive(AutoFireTimer);
+}
+
+void AHuntWeapon::SetFireMode(EHuntFireMode NewFireMode)
+{
+	StopFire();
+	FireMode = NewFireMode;
+}
+
+void AHuntWeapon::Shoot()
+{
+	const APawn* OwnerPawn = GetInstigator();
+	if (!Definition || !Definition->ProjectileClass || !OwnerPawn)
 	{
 		return;
 	}
-	LastFireTime = Now;
+	LastFireTime = GetWorld()->GetTimeSeconds();
 
 	const FVector MuzzleLocation = Mesh->GetSocketLocation(MuzzleBoneName);
 
@@ -61,10 +109,22 @@ void AHuntWeapon::Fire(const FRotator& AimRotation)
 	Params.Owner = this;
 	Params.Instigator = GetInstigator();
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	GetWorld()->SpawnActor<AHuntProjectile>(Definition->ProjectileClass, MuzzleLocation, AimRotation, Params);
+	GetWorld()->SpawnActor<AHuntProjectile>(Definition->ProjectileClass, MuzzleLocation, OwnerPawn->GetControlRotation(), Params);
 
 	if (Definition->FireSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, Definition->FireSound, MuzzleLocation);
 	}
+
+	// 탄은 반동 전 조준점으로 나가고, 다음 발부터 올라간 조준선을 따른다
+	if (AHuntCharacter* Character = Cast<AHuntCharacter>(GetInstigator()))
+	{
+		const float HipMultiplier = FMath::Lerp(Definition->HipFireRecoilMultiplier, 1.f, Character->GetAimBlend());
+		const float Multiplier = (bFirstShot ? Definition->FirstShotRecoilMultiplier : 1.f) * HipMultiplier;
+		const float Yaw = FMath::FRandRange(-Definition->HorizontalRecoil, Definition->HorizontalRecoil);
+		Character->AddRecoil(FRotator(Definition->VerticalRecoil, Yaw, 0.f) * Multiplier);
+		Character->AddWeaponKick();
+		Character->PlayFireAnimation();
+	}
+	bFirstShot = false;
 }

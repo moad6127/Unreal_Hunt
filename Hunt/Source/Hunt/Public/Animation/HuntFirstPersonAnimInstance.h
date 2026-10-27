@@ -43,6 +43,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	FVector LeftHandIKLocation = FVector::ZeroVector;
 
+	// 발사 애니메이션 세기. ABP에서 발사 슬롯을 얹는 애디티브의 Alpha로 쓴다 (1보다 크면 더 크게 튄다)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float FireAnimationAlpha = 1.f;
+
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<AHuntCharacter> Character;

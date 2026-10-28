@@ -28,14 +28,14 @@ public:
 	// 조준 블렌드(0 = 지향사격, 1 = 완전 조준). 시작·끝이 부드럽게 감속되는 값이라 카메라와 애님이 같이 쓴다
 	float GetAimBlend() const { return FMath::SmoothStep(0.f, 1.f, AimAlpha); }
 
+	// 걸음 상태(false = 걷기, true = 조깅·질주). 이동 애니메이션을 섞지 않고 이 값으로 바꿔 끼운다
+	bool IsRunGait() const { return bRunGait; }
+
 	// 발사 반동. Kick만큼 조준선을 RecoilSmoothTime 동안 올리고, 사격을 멈추면 RecoilRecovery 비율만큼 되돌린다
 	void AddRecoil(const FRotator& Kick);
 
 	// 장착한 총의 킥(화면에 보이는 총 반동)을 한 발 더한다. 연사하면 쌓이고 KickRecoverySpeed로 돌아온다
 	void AddWeaponKick();
-
-	// 장착한 총의 발사 애니메이션을 1인칭 팔 슬롯에 재생한다. 연사 중에는 매 발 처음부터 다시 재생
-	void PlayFireAnimation();
 
 
 protected:
@@ -109,6 +109,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> RunAction;
 
+	// 누르고 있는 동안 질주
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> SprintAction;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> FireAction;
 
@@ -118,8 +122,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Movement")
 	float WalkSpeed = 250.f;
 
+	// 조깅(달리기 토글). BS_Hunt_Loco_Fwd의 ALS 달리기 샘플 속도
 	UPROPERTY(EditDefaultsOnly, Category = "Movement")
-	float RunSpeed = 600.f;
+	float RunSpeed = 350.f;
+
+	// 질주. BS_Hunt_Loco_Fwd의 ALS 질주 샘플 속도
+	UPROPERTY(EditDefaultsOnly, Category = "Movement")
+	float SprintSpeed = 600.f;
+
+	// 입력 방향이 정면에서 이 각도(도) 안일 때만 질주한다. 벗어나면 조깅/걷기 속도로 돌아간다
+	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	float SprintMaxAngle = 50.f;
+
+	// 최대 속도를 낮출 때(질주 → 조깅/걷기) 초당 줄이는 양(cm/s). 한 번에 낮추면 몸이 0.2초 만에 멈춰 이동 애니메이션 블렌드가 따라오지 못한다
+	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "1.0"))
+	float SpeedDownRate = 600.f;
 
 	// 옆·뒤로 갈 때 최대 속도 비율(정면 = 1). 이동 애니메이션 실제 속도(옆 약 0.75, 뒤 약 0.6배)에 맞춰 발 미끄러짐을 줄인다
 	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.1", ClampMax = "1.0"))
@@ -131,10 +148,6 @@ protected:
 	// BeginPlay에서 이 총을 스폰해 손에 든다. 비워두면 맨손
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> DefaultWeapon;
-
-	// 1인칭 팔 ABP에서 발사 애니메이션을 받는 슬롯
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FName FireSlotName = TEXT("DefaultSlot");
 
 	// 다른 사람이 보는 전신 손 소켓
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
@@ -160,6 +173,8 @@ private:
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void ToggleRun();
+	void StartSprint();
+	void StopSprint();
 	void StartFire();
 	void StopFire();
 	void StartAim();
@@ -168,6 +183,12 @@ private:
 
 	// 달리기 토글 상태. 실제 최대 속도는 Tick에서 이동 방향 비율을 곱해 정한다
 	bool bRunning = false;
+
+	// 질주 키를 누르고 있는지. 조준 중이거나 정면이 아니면 무시한다
+	bool bWantsToSprint = false;
+
+	// shortcut: 복제하지 않아 다른 플레이어에게는 걷기 상태로 보인다, 멀티 점검 때 달리기·질주 상태와 함께 복제
+	bool bRunGait = false;
 
 	// shortcut: 조준 상태를 복제하지 않아 다른 플레이어에게는 조준 자세가 안 보인다, 멀티 점검 때 복제 추가
 	bool bWantsToAim = false;

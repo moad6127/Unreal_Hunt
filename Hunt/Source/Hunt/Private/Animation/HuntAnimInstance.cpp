@@ -32,7 +32,8 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	const FVector Velocity = Character->GetVelocity();
 	GroundSpeed = Velocity.Size2D();
 	Direction = GroundSpeed > KINDA_SMALL_NUMBER ? FRotator::NormalizeAxis(Velocity.Rotation().Yaw - Character->GetActorRotation().Yaw) : 0.f;
-	bShouldMove = GroundSpeed > 3.f && !Movement->GetCurrentAcceleration().IsNearlyZero();
+	// 키를 떼도 몸이 미끄러지는 동안은 이동 애니메이션을 유지해 속도에 맞춰 발걸음이 줄어들며 멈춘다
+	bShouldMove = GroundSpeed > 3.f;
 	bIsFalling = Movement->IsFalling();
 
 	// 반대 반구의 방향은 앞뒤로 뒤집어 접는다(예: -120 → 앞쪽 -60). 두 값 모두 끊김 없이 이어진다
@@ -45,7 +46,12 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	const float RunAnimSpeed = AbsDirection <= 90.f
 		? FMath::Lerp(ForwardRunAnimSpeed, SideRunAnimSpeed, AbsDirection / 90.f)
 		: FMath::Lerp(SideRunAnimSpeed, BackwardRunAnimSpeed, (AbsDirection - 90.f) / 90.f);
-	LocomotionPlayRate = FMath::Max(1.f, GroundSpeed / RunAnimSpeed);
+
+	bRunGait = Character->IsRunGait();
+	WalkBlendSpeed = FMath::Min(GroundSpeed, WalkAnimSpeed);
+	WalkPlayRate = FMath::Max(1.f, GroundSpeed / WalkAnimSpeed);
+	RunBlendSpeed = FMath::Max(GroundSpeed, JogAnimSpeed);
+	LocomotionPlayRate = GroundSpeed / FMath::Clamp(GroundSpeed, JogAnimSpeed, FMath::Max(JogAnimSpeed, RunAnimSpeed));
 
 	if (bShouldMove)
 	{

@@ -26,7 +26,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	float GroundSpeed = 0.f;
 
-	// 속도와 입력 가속이 모두 있을 때만 true (멈출 때 바로 Idle로)
+	// 움직이고 있으면 true. 키를 뗀 뒤 감속하는 동안에도 true (전신과 같은 기준)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bShouldMove = false;
 
@@ -42,10 +42,6 @@ protected:
 	// 손 모양·팔꿈치는 그립 포즈가 정하고, IK는 총마다 다른 잡는 위치로 손목만 옮긴다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	FVector LeftHandIKLocation = FVector::ZeroVector;
-
-	// 발사 애니메이션 세기. ABP에서 발사 슬롯을 얹는 애디티브의 Alpha로 쓴다 (1보다 크면 더 크게 튄다)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
-	float FireAnimationAlpha = 1.f;
 
 private:
 	UPROPERTY(Transient)

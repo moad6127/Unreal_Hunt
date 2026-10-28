@@ -26,7 +26,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	float GroundSpeed = 0.f;
 
-	// 속도와 입력 가속이 모두 있을 때만 true (멈출 때 바로 Idle로)
+	// 움직이고 있으면 true. 키를 뗀 뒤 감속하는 동안에도 true라 발걸음이 속도에 맞춰 줄어들며 멈춘다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bShouldMove = false;
 
@@ -53,8 +53,25 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0", ClampMax = "45.0"))
 	float BackwardHysteresis = 10.f;
 
-	// 이동 블렌드스페이스의 재생 속도. 블렌드스페이스는 가장 빠른 달리기 샘플 속도에서 멈추므로
-	// 그보다 빠르게 움직이면 그만큼 빨리 재생해 다리가 몸을 따라오게 한다 (1 미만으로는 안 내림)
+	// 걸음 상태(false = 걷기, true = 조깅·질주). ABP는 걷기용·조깅용 블렌드스페이스를 섞지 않고 이 값으로 바꿔 끼운다(관성 블렌딩)
+	// 걷기와 조깅을 한 블렌드스페이스 안에서 섞으면 중간 자세에서 다리가 모여 보이기 때문
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	bool bRunGait = false;
+
+	// 걷기용 블렌드스페이스에 넣는 속도. 걷기 샘플 속도까지만 올려 조깅 샘플이 섞이지 않게 한다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float WalkBlendSpeed = 0.f;
+
+	// 걷기 샘플보다 빠르게 움직이면 그만큼 빨리 재생한다 (1 미만으로는 안 내림)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float WalkPlayRate = 1.f;
+
+	// 조깅용 블렌드스페이스에 넣는 속도. 조깅 샘플 속도 아래로 내리지 않아 걷기 샘플이 섞이지 않게 한다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float RunBlendSpeed = 0.f;
+
+	// 조깅용 블렌드스페이스의 재생 속도. 조깅 샘플보다 느리면(옆·뒤 조깅, 감속 중) 느리게, 가장 빠른 샘플보다 빠르면 빠르게 재생해
+	// 다리가 몸 속도와 맞게 한다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	float LocomotionPlayRate = 1.f;
 
@@ -68,6 +85,15 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
 	float BackwardRunAnimSpeed = 350.f;
+
+	// 조깅 샘플(ALS 달리기) 속도. 모든 방향이 같다
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
+	float JogAnimSpeed = 350.f;
+
+	// 걷기 샘플(ALS 걷기) 속도. 모든 방향이 같다(ALS 원본 ABP의 걷기 기준 속도)
+	// shortcut: 블렌드스페이스 샘플 값을 옮겨 적은 것, 샘플 속도를 바꾸면 여기도 맞춰야 한다
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
+	float WalkAnimSpeed = 150.f;
 
 	// 제자리 회전(Lyra 방식): 서 있을 때 액터는 시선을 따라 돌지만 몸은 이만큼 반대로 돌려 제자리에 둔다
 	// ABP의 Rotate Root Bone(Yaw)에 넣는다. +면 몸이 시선보다 오른쪽을 보고 있다

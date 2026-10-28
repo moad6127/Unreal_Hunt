@@ -7,7 +7,6 @@
 #include "WeaponDefinition.generated.h"
 
 class AHuntProjectile;
-class UAnimSequenceBase;
 class USkeletalMesh;
 class USoundBase;
 
@@ -68,17 +67,6 @@ public:
 	// 완전 조준일 때 킥 비율 (지향사격 = 1)
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Kick", meta = (ClampMin = "0.0"))
 	float AimKickScale = 0.5f;
-
-	// 쏠 때 1인칭 팔에 재생할 애디티브 애니메이션 (지향사격 / 조준)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
-	TObjectPtr<UAnimSequenceBase> FireAnimation;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
-	TObjectPtr<UAnimSequenceBase> AimFireAnimation;
-
-	// 지향사격일 때 발사 애니메이션 세기 배율(총이 튀는 크기). 완전 조준이면 1
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation", meta = (ClampMin = "0.0"))
-	float HipFireAnimationScale = 1.5f;
 
 	// 한 발에 조준선이 위로 튀는 각도(도)
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Recoil", meta = (ClampMin = "0.0"))

@@ -4,7 +4,6 @@
 #include "Character/HuntCharacter.h"
 #include "EnhancedInputComponent.h"
 #include "InputAction.h"
-#include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -49,8 +48,10 @@ AHuntCharacter::AHuntCharacter()
 	// 가감속을 완만하게(엔진 기본 2048/2048/8): 방향을 뒤집을 때 속도·방향이 한순간에 바뀌지 않아 이동 애니메이션 전환이 부드럽다
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	Movement->MaxAcceleration = 1200.f;
-	Movement->BrakingDecelerationWalking = 800.f;
+	Movement->BrakingDecelerationWalking = 500.f;
 	Movement->GroundFriction = 4.f;
+	// 키를 뗐을 때의 제동(엔진 기본 마찰 ×2)을 줄여 한 번에 서지 않고 조깅 약 0.4초, 걷기 약 0.25초에 걸쳐 멈춘다
+	Movement->BrakingFrictionFactor = 0.5f;
 }
 
 void AHuntCharacter::BeginPlay()
@@ -130,7 +131,29 @@ void AHuntCharacter::Tick(float DeltaSeconds)
 		const float DirectionScale = Angle <= 90.f
 			? FMath::Lerp(1.f, StrafeSpeedScale, Angle / 90.f)
 			: FMath::Lerp(StrafeSpeedScale, BackwardSpeedScale, (Angle - 90.f) / 90.f);
-		Movement->MaxWalkSpeed = (bRunning ? RunSpeed : WalkSpeed) * DirectionScale;
+		// 조준 중에는 걷기만(걷기 애니메이션 샘플 속도보다 느리면 제자리 걸음처럼 보인다), 질주는 정면 쪽으로 갈 때만
+		float BaseSpeed = bRunning ? RunSpeed : WalkSpeed;
+		if (bWantsToAim)
+		{
+			BaseSpeed = WalkSpeed;
+		}
+		else if (bWantsToSprint && Angle <= SprintMaxAngle)
+		{
+			BaseSpeed = SprintSpeed;
+		}
+		// 올릴 때는 가속(MaxAcceleration)이 이미 완만하게 하므로 바로, 내릴 때만 SpeedDownRate로 천천히
+		const float TargetSpeed = BaseSpeed * DirectionScale;
+		Movement->MaxWalkSpeed = TargetSpeed >= Movement->MaxWalkSpeed
+			? TargetSpeed
+			: FMath::FInterpConstantTo(Movement->MaxWalkSpeed, TargetSpeed, DeltaSeconds, SpeedDownRate);
+
+		// 최대 속도가 걷기와 조깅의 중간을 넘으면 조깅 걸음. 감속 중에는 최대 속도가 천천히 내려오므로 중간쯤에서 걷기로 바뀐다
+		bRunGait = Movement->MaxWalkSpeed > (WalkSpeed + RunSpeed) * 0.5f * DirectionScale;
+	}
+	else
+	{
+		// 멈추는 중: 실제 속도가 걷기와 조깅의 중간 아래로 내려가면 걷기 걸음으로 감속한다
+		bRunGait = bRunGait && GetVelocity().Size2D() > (WalkSpeed + RunSpeed) * 0.5f;
 	}
 
 	// 다른 플레이어의 캐릭터는 내 화면 카메라가 아니므로 갱신하지 않는다
@@ -239,22 +262,6 @@ void AHuntCharacter::AddWeaponKick()
 	KickTargetRotation += FRotator(Definition->KickPitch, FMath::FRandRange(-Definition->KickYaw, Definition->KickYaw), 0.f);
 }
 
-void AHuntCharacter::PlayFireAnimation()
-{
-	const UWeaponDefinition* Definition = EquippedWeapon ? EquippedWeapon->Definition.Get() : nullptr;
-	UAnimInstance* ArmsAnim = FirstPersonArms->GetAnimInstance();
-	if (!Definition || !ArmsAnim)
-	{
-		return;
-	}
-
-	UAnimSequenceBase* FireAnim = GetAimBlend() > 0.5f ? Definition->AimFireAnimation : Definition->FireAnimation;
-	if (FireAnim)
-	{
-		ArmsAnim->PlaySlotAnimationAsDynamicMontage(FireAnim, FireSlotName, 0.02f, 0.15f);
-	}
-}
-
 void AHuntCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
@@ -265,6 +272,8 @@ void AHuntCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
 	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 	EnhancedInput->BindAction(RunAction, ETriggerEvent::Started, this, &AHuntCharacter::ToggleRun);
+	EnhancedInput->BindAction(SprintAction, ETriggerEvent::Started, this, &AHuntCharacter::StartSprint);
+	EnhancedInput->BindAction(SprintAction, ETriggerEvent::Completed, this, &AHuntCharacter::StopSprint);
 	EnhancedInput->BindAction(FireAction, ETriggerEvent::Started, this, &AHuntCharacter::StartFire);
 	EnhancedInput->BindAction(FireAction, ETriggerEvent::Completed, this, &AHuntCharacter::StopFire);
 	EnhancedInput->BindAction(AimAction, ETriggerEvent::Started, this, &AHuntCharacter::StartAim);
@@ -291,6 +300,16 @@ void AHuntCharacter::Look(const FInputActionValue& Value)
 void AHuntCharacter::ToggleRun()
 {
 	bRunning = !bRunning;
+}
+
+void AHuntCharacter::StartSprint()
+{
+	bWantsToSprint = true;
+}
+
+void AHuntCharacter::StopSprint()
+{
+	bWantsToSprint = false;
 }
 
 void AHuntCharacter::StartFire()

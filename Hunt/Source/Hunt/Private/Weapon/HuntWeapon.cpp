@@ -124,7 +124,6 @@ void AHuntWeapon::Shoot()
 		const float Yaw = FMath::FRandRange(-Definition->HorizontalRecoil, Definition->HorizontalRecoil);
 		Character->AddRecoil(FRotator(Definition->VerticalRecoil, Yaw, 0.f) * Multiplier);
 		Character->AddWeaponKick();
-		Character->PlayFireAnimation();
 	}
 	bFirstShot = false;
 }

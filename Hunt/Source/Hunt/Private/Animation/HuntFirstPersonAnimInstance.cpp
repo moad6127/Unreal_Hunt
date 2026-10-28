@@ -3,7 +3,6 @@
 
 #include "Animation/HuntFirstPersonAnimInstance.h"
 #include "Character/HuntCharacter.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
 
 void UHuntFirstPersonAnimInstance::NativeInitializeAnimation()
@@ -24,13 +23,10 @@ void UHuntFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	GroundSpeed = Character->GetVelocity().Size2D();
-	bShouldMove = GroundSpeed > 3.f && !Character->GetCharacterMovement()->GetCurrentAcceleration().IsNearlyZero();
+	bShouldMove = GroundSpeed > 3.f;
 	AimAlpha = Character->GetAimBlend();
 
 	const AHuntWeapon* Weapon = Character->GetEquippedWeapon();
-	const UWeaponDefinition* Definition = Weapon ? Weapon->Definition.Get() : nullptr;
-	FireAnimationAlpha = Definition ? FMath::Lerp(Definition->HipFireAnimationScale, 1.f, AimAlpha) : 1.f;
-
 	FVector GripLocation;
 	bLeftHandIK = Weapon && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent() && Weapon->GetFirstPersonLeftHandGripLocation(GripLocation);
 	if (bLeftHandIK)

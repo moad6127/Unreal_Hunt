@@ -171,9 +171,9 @@ void AHuntCharacter::Tick(float DeltaSeconds)
 	// 보간으로 걷기·달리기의 머리 흔들림을 줄인다 (0이면 즉시 따라감)
 	HeadCameraLocation = CameraFollowSpeed > 0.f ? FMath::VInterpTo(HeadCameraLocation, Target, DeltaSeconds, CameraFollowSpeed) : Target;
 
-	// 조준 진행도: 총의 조준 시간 동안 일정하게 0↔1
+	// 조준 진행도: 총의 조준 시간 동안 일정하게 0↔1. 공중에서는 조준이 풀리고, 버튼을 누르고 있으면 착지 후 다시 조준한다
 	const UWeaponDefinition* Definition = EquippedWeapon ? EquippedWeapon->Definition.Get() : nullptr;
-	const float AimTarget = (bWantsToAim && Definition) ? 1.f : 0.f;
+	const float AimTarget = (bWantsToAim && Definition && !Movement->IsFalling()) ? 1.f : 0.f;
 	const float AimSpeed = Definition ? 1.f / Definition->AimDownSightsTime : 10.f;
 	AimAlpha = FMath::FInterpConstantTo(AimAlpha, AimTarget, DeltaSeconds, AimSpeed);
 

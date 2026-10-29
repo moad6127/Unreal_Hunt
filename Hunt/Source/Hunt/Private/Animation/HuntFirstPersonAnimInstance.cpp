@@ -3,6 +3,7 @@
 
 #include "Animation/HuntFirstPersonAnimInstance.h"
 #include "Character/HuntCharacter.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
 
 void UHuntFirstPersonAnimInstance::NativeInitializeAnimation()
@@ -23,7 +24,8 @@ void UHuntFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	GroundSpeed = Character->GetVelocity().Size2D();
-	bShouldMove = GroundSpeed > 3.f;
+	// 공중에서는 발을 딛지 않으므로 걷기·달리기 흔들림을 멈춘다
+	bShouldMove = GroundSpeed > 3.f && !Character->GetCharacterMovement()->IsFalling();
 	AimAlpha = Character->GetAimBlend();
 
 	const AHuntWeapon* Weapon = Character->GetEquippedWeapon();

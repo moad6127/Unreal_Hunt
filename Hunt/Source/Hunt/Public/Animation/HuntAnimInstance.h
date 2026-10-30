@@ -155,7 +155,20 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AHuntCharacter> Character;
 
+	void UpdateVelocity();
+	void UpdateFoldedDirections();
+	// 현재 방향의 가장 빠른 이동 애니메이션 속도
+	float GetRunAnimSpeed() const;
+	void UpdateGaitBlend();
+	void UpdateMovingBackward();
+	void UpdateWeapon();
+	void UpdateAimPitch();
+
 	void UpdateTurnInPlace(float DeltaSeconds);
+	void UpdateRootYawOffset(float DeltaSeconds, bool bCanTurn);
+	void AdvanceTurnTimers(float DeltaSeconds);
+	void ApplyTurnYawCurve();
+	void TryStartTurn(bool bCanTurn);
 
 	float PrevActorYaw = 0.f;
 	// 회전 애니메이션의 RemainingTurnYaw(가중치로 나눈 값) 직전 프레임 값

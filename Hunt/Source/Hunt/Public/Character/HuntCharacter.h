@@ -181,6 +181,45 @@ private:
 	void StopAim();
 	void UpdateWeaponVisibility();
 
+	// 생성자에서 컴포넌트 구성
+	void SetupBodyMesh();
+	void CreateFirstPersonCamera();
+	void CreateFirstPersonArms();
+	void CreateFirstPersonLegs();
+	void SetupMovement();
+
+	// 기본 총: 1인칭 팔용(EquippedWeapon)과 전신용(BodyWeapon) 두 개를 스폰해 붙인다
+	void EquipDefaultWeapon();
+	AHuntWeapon* SpawnWeapon();
+	void AttachFirstPersonWeapon();
+	void AttachBodyWeapon();
+
+	const UWeaponDefinition* GetWeaponDefinition() const;
+
+	// 이동 속도·걸음 상태
+	void UpdateMovementSpeed(float DeltaSeconds);
+	float GetInputAngle(const FVector& InputDirection) const;
+	float GetDirectionSpeedScale(float Angle) const;
+	float GetBaseSpeed(float Angle) const;
+	void ApproachMaxWalkSpeed(float TargetSpeed, float DeltaSeconds);
+
+	// 카메라·조준
+	void UpdateHeadCameraLocation(float DeltaSeconds);
+	void UpdateAimAlpha(float DeltaSeconds);
+	void UpdateCameraView(float AimBlend);
+
+	// 반동 (조준선). 이번 프레임에 적용할 몫을 꺼내고 남은 양을 줄인다
+	void ApplyRecoil(float DeltaSeconds);
+	FRotator ConsumePendingRecoil(float DeltaSeconds);
+	FRotator ConsumeRecoilRecovery(float DeltaSeconds);
+
+	// 1인칭 팔 (흔들림·킥·조준 정렬)
+	void UpdateWeaponSway(float DeltaSeconds);
+	void UpdateWeaponKick(float DeltaSeconds);
+	void UpdateFirstPersonArms(float AimBlend);
+	FTransform GetSightAlignedArmsTransform(float AimBlend) const;
+	FVector ArmsWorldToCamera(const FTransform& ArmsToCamera, const FVector& WorldLocation) const;
+
 	// 달리기 토글 상태. 실제 최대 속도는 Tick에서 이동 방향 비율을 곱해 정한다
 	bool bRunning = false;
 

@@ -66,6 +66,10 @@ protected:
 private:
 	// 총구에서 소유자의 컨트롤 회전(카메라가 보는 방향)으로 발사체를 쏜다
 	void Shoot();
+	void SpawnProjectile(const FVector& Location, const FRotator& Rotation);
+	void PlayFireSound(const FVector& Location);
+	// 소유 캐릭터의 조준선 반동과 총 킥 (첫 발·지향사격 배율 적용)
+	void ApplyRecoilToOwner();
 
 	double LastFireTime = -1.0e9;
 	FTimerHandle AutoFireTimer;

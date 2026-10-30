@@ -104,26 +104,42 @@ void AHuntWeapon::Shoot()
 	LastFireTime = GetWorld()->GetTimeSeconds();
 
 	const FVector MuzzleLocation = Mesh->GetSocketLocation(MuzzleBoneName);
+	SpawnProjectile(MuzzleLocation, OwnerPawn->GetControlRotation());
+	PlayFireSound(MuzzleLocation);
 
+	// 탄은 반동 전 조준점으로 나가고, 다음 발부터 올라간 조준선을 따른다
+	ApplyRecoilToOwner();
+	bFirstShot = false;
+}
+
+void AHuntWeapon::SpawnProjectile(const FVector& Location, const FRotator& Rotation)
+{
 	FActorSpawnParameters Params;
 	Params.Owner = this;
 	Params.Instigator = GetInstigator();
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	GetWorld()->SpawnActor<AHuntProjectile>(Definition->ProjectileClass, MuzzleLocation, OwnerPawn->GetControlRotation(), Params);
+	GetWorld()->SpawnActor<AHuntProjectile>(Definition->ProjectileClass, Location, Rotation, Params);
+}
 
+void AHuntWeapon::PlayFireSound(const FVector& Location)
+{
 	if (Definition->FireSound)
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, Definition->FireSound, MuzzleLocation);
+		UGameplayStatics::PlaySoundAtLocation(this, Definition->FireSound, Location);
+	}
+}
+
+void AHuntWeapon::ApplyRecoilToOwner()
+{
+	AHuntCharacter* Character = Cast<AHuntCharacter>(GetInstigator());
+	if (!Character)
+	{
+		return;
 	}
 
-	// 탄은 반동 전 조준점으로 나가고, 다음 발부터 올라간 조준선을 따른다
-	if (AHuntCharacter* Character = Cast<AHuntCharacter>(GetInstigator()))
-	{
-		const float HipMultiplier = FMath::Lerp(Definition->HipFireRecoilMultiplier, 1.f, Character->GetAimBlend());
-		const float Multiplier = (bFirstShot ? Definition->FirstShotRecoilMultiplier : 1.f) * HipMultiplier;
-		const float Yaw = FMath::FRandRange(-Definition->HorizontalRecoil, Definition->HorizontalRecoil);
-		Character->AddRecoil(FRotator(Definition->VerticalRecoil, Yaw, 0.f) * Multiplier);
-		Character->AddWeaponKick();
-	}
-	bFirstShot = false;
+	const float HipMultiplier = FMath::Lerp(Definition->HipFireRecoilMultiplier, 1.f, Character->GetAimBlend());
+	const float Multiplier = (bFirstShot ? Definition->FirstShotRecoilMultiplier : 1.f) * HipMultiplier;
+	const float Yaw = FMath::FRandRange(-Definition->HorizontalRecoil, Definition->HorizontalRecoil);
+	Character->AddRecoil(FRotator(Definition->VerticalRecoil, Yaw, 0.f) * Multiplier);
+	Character->AddWeaponKick();
 }

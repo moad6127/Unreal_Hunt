@@ -46,4 +46,6 @@ protected:
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<AHuntCharacter> Character;
+
+	void UpdateLeftHandIK();
 };

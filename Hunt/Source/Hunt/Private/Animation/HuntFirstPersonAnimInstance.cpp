@@ -28,6 +28,11 @@ void UHuntFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	bShouldMove = GroundSpeed > 3.f && !Character->GetCharacterMovement()->IsFalling();
 	AimAlpha = Character->GetAimBlend();
 
+	UpdateLeftHandIK();
+}
+
+void UHuntFirstPersonAnimInstance::UpdateLeftHandIK()
+{
 	const AHuntWeapon* Weapon = Character->GetEquippedWeapon();
 	FVector GripLocation;
 	bLeftHandIK = Weapon && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent() && Weapon->GetFirstPersonLeftHandGripLocation(GripLocation);

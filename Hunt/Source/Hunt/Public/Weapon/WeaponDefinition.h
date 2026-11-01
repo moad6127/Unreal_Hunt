@@ -9,6 +9,7 @@
 class AHuntProjectile;
 class USkeletalMesh;
 class USoundBase;
+class UTexture2D;
 
 UENUM(BlueprintType)
 enum class EHuntFireMode : uint8
@@ -91,4 +92,28 @@ public:
 	// 지향사격(허리 사격)일 때 조준선 반동 배율. 완전 조준이면 1
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Recoil", meta = (ClampMin = "0.0"))
 	float HipFireRecoilMultiplier = 1.5f;
+
+	// 지향사격으로 멈춰 서 있을 때 탄이 퍼지는 원뿔의 반각(도). 완전 조준이면 0
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Spread", meta = (ClampMin = "0.0"))
+	float HipSpread = 1.f;
+
+	// 지향사격으로 최대 속도로 움직일 때의 반각(도). 속도에 따라 HipSpread와 섞는다
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Spread", meta = (ClampMin = "0.0"))
+	float MovingSpread = 3.f;
+
+	// 크로스헤어 조각. 상하좌우는 탄퍼짐만큼 중앙에서 벌어진다. 비워 둔 조각은 그리지 않는다
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Crosshair")
+	TObjectPtr<UTexture2D> CrosshairCenter;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Crosshair")
+	TObjectPtr<UTexture2D> CrosshairLeft;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Crosshair")
+	TObjectPtr<UTexture2D> CrosshairRight;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Crosshair")
+	TObjectPtr<UTexture2D> CrosshairTop;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Crosshair")
+	TObjectPtr<UTexture2D> CrosshairBottom;
 };

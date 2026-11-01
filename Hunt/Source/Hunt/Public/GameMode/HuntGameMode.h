@@ -13,5 +13,7 @@ UCLASS()
 class HUNT_API AHuntGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
-	
+
+public:
+	AHuntGameMode();
 };

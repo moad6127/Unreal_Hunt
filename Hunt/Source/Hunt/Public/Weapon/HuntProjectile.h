@@ -16,6 +16,7 @@ class HUNT_API AHuntProjectile : public AActor
 
 public:
 	AHuntProjectile();
+	virtual void Tick(float DeltaSeconds) override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -29,4 +30,7 @@ protected:
 private:
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
+
+	// 궤적 디버그 선을 이어 그릴 직전 위치
+	FVector LastTrailLocation = FVector::ZeroVector;
 };

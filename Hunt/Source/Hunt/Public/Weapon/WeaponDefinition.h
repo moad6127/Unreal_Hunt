@@ -101,6 +101,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Spread", meta = (ClampMin = "0.0"))
 	float MovingSpread = 3.f;
 
+	// 공중(점프·낙하)일 때의 반각(도). 땅에서의 탄퍼짐과 보간으로 섞는다
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Spread", meta = (ClampMin = "0.0"))
+	float AirSpread = 6.f;
+
 	// 크로스헤어 조각. 상하좌우는 탄퍼짐만큼 중앙에서 벌어진다. 비워 둔 조각은 그리지 않는다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Crosshair")
 	TObjectPtr<UTexture2D> CrosshairCenter;

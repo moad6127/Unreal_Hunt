@@ -160,6 +160,19 @@ const UWeaponDefinition* AHuntCharacter::GetWeaponDefinition() const
 	return EquippedWeapon ? EquippedWeapon->Definition.Get() : nullptr;
 }
 
+float AHuntCharacter::GetCurrentSpread() const
+{
+	const UWeaponDefinition* Definition = GetWeaponDefinition();
+	if (!Definition)
+	{
+		return 0.f;
+	}
+	// 걸음 상태마다 MaxWalkSpeed가 바뀌므로 질주 속도를 최대 속도로 삼는다
+	const float MoveAlpha = FMath::Clamp(GetVelocity().Size2D() / SprintSpeed, 0.f, 1.f);
+	const float GroundSpread = FMath::Lerp(Definition->HipSpread, Definition->MovingSpread, MoveAlpha);
+	return FMath::Lerp(GroundSpread, Definition->AirSpread, AirSpreadAlpha) * (1.f - GetAimBlend());
+}
+
 void AHuntCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -174,6 +187,7 @@ void AHuntCharacter::Tick(float DeltaSeconds)
 
 	UpdateHeadCameraLocation(DeltaSeconds);
 	UpdateAimAlpha(DeltaSeconds);
+	AirSpreadAlpha = FMath::FInterpTo(AirSpreadAlpha, GetCharacterMovement()->IsFalling() ? 1.f : 0.f, DeltaSeconds, AirSpreadInterpSpeed);
 	ApplyRecoil(DeltaSeconds);
 
 	const float AimBlend = GetAimBlend();

@@ -31,6 +31,9 @@ public:
 	// 걸음 상태(false = 걷기, true = 조깅·질주). 이동 애니메이션을 섞지 않고 이 값으로 바꿔 끼운다
 	bool IsRunGait() const { return bRunGait; }
 
+	// 지금 쏘면 탄이 퍼지는 원뿔의 반각(도). 발사와 크로스헤어가 같이 쓴다
+	float GetCurrentSpread() const;
+
 	// 발사 반동. Kick만큼 조준선을 RecoilSmoothTime 동안 올리고, 사격을 멈추면 RecoilRecovery 비율만큼 되돌린다
 	void AddRecoil(const FRotator& Kick);
 
@@ -96,6 +99,10 @@ protected:
 	// 사격을 멈춘 뒤 반동이 원래 조준점으로 돌아오는 속도. 높을수록 빨리 돌아온다
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Recoil", meta = (ClampMin = "0.0"))
 	float RecoilRecoverySpeed = 6.f;
+
+	// 점프·착지 때 탄퍼짐이 공중 값으로(또는 땅 값으로) 바뀌는 속도. 크로스헤어가 튀지 않게 보간한다
+	UPROPERTY(EditDefaultsOnly, Category = "Spread", meta = (ClampMin = "0.0"))
+	float AirSpreadInterpSpeed = 10.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> MoveAction;
@@ -234,6 +241,9 @@ private:
 
 	// 조준 진행도(0~1, 선형). 총의 AimDownSightsTime 동안 변한다
 	float AimAlpha = 0.f;
+
+	// 공중 탄퍼짐 비율(0 = 땅, 1 = 공중). AirSpreadInterpSpeed로 따라간다
+	float AirSpreadAlpha = 0.f;
 
 	// 머리를 보간으로 따라가는 카메라 위치(캡슐 기준)
 	FVector HeadCameraLocation = FVector::ZeroVector;

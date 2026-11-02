@@ -51,6 +51,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	FName MuzzleBoneName = TEXT("b_gun_muzzleflash");
 
+	// 조준점을 찾는 카메라 트레이스 길이(cm). 아무것도 안 맞으면 이 거리의 점을 조준한다
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	float AimTraceDistance = 100000.f;
+
 	// 지향사격 왼손 소켓 (총 메시마다 추가)
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	FName LeftHandSocketName = TEXT("Socket_LeftHand");
@@ -64,8 +68,14 @@ protected:
 	FName FirstPersonLeftHandSocketName = TEXT("Socket_LeftHand_FP");
 
 private:
-	// 총구에서 소유자의 컨트롤 회전(카메라가 보는 방향)으로 발사체를 쏜다
+	// 총구에서 크로스헤어가 가리키는 점을 향해, 현재 탄퍼짐 안에서 발사체를 쏜다
 	void Shoot();
+	// 카메라 중앙 트레이스로 조준점을 구해 총구에서 그 점을 향하는 방향
+	FVector GetAimDirection(const APawn* OwnerPawn, const FVector& MuzzleLocation) const;
+	// 탄이 생겨날 위치. 벽에 붙어 총구가 벽 너머에 있으면 카메라와 총구 사이의 벽 앞으로 당긴다
+	FVector GetSpawnLocation(const APawn* OwnerPawn) const;
+	// 플레이어는 실제 카메라 위치·방향, 컨트롤러가 없으면 폰의 눈 위치
+	static void GetOwnerViewPoint(const APawn* OwnerPawn, FVector& OutLocation, FRotator& OutRotation);
 	void SpawnProjectile(const FVector& Location, const FRotator& Rotation);
 	void PlayFireSound(const FVector& Location);
 	// 소유 캐릭터의 조준선 반동과 총 킥 (첫 발·지향사격 배율 적용)

@@ -103,13 +103,65 @@ void AHuntWeapon::Shoot()
 	}
 	LastFireTime = GetWorld()->GetTimeSeconds();
 
-	const FVector MuzzleLocation = Mesh->GetSocketLocation(MuzzleBoneName);
-	SpawnProjectile(MuzzleLocation, OwnerPawn->GetControlRotation());
-	PlayFireSound(MuzzleLocation);
+	const FVector SpawnLocation = GetSpawnLocation(OwnerPawn);
+	const AHuntCharacter* Character = Cast<AHuntCharacter>(OwnerPawn);
+	const float SpreadRad = FMath::DegreesToRadians(Character ? Character->GetCurrentSpread() : 0.f);
+	const FVector Direction = FMath::VRandCone(GetAimDirection(OwnerPawn, SpawnLocation), SpreadRad);
+	SpawnProjectile(SpawnLocation, Direction.Rotation());
+	PlayFireSound(SpawnLocation);
 
 	// 탄은 반동 전 조준점으로 나가고, 다음 발부터 올라간 조준선을 따른다
 	ApplyRecoilToOwner();
 	bFirstShot = false;
+}
+
+FVector AHuntWeapon::GetAimDirection(const APawn* OwnerPawn, const FVector& MuzzleLocation) const
+{
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	GetOwnerViewPoint(OwnerPawn, ViewLocation, ViewRotation);
+
+	const FVector ViewDirection = ViewRotation.Vector();
+	const FVector TraceEnd = ViewLocation + ViewDirection * AimTraceDistance;
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(HuntWeaponAim), false, OwnerPawn);
+	Params.AddIgnoredActor(this);
+	const FVector AimPoint = GetWorld()->LineTraceSingleByChannel(Hit, ViewLocation, TraceEnd, ECC_Visibility, Params) ? Hit.ImpactPoint : TraceEnd;
+
+	// 벽에 붙어 총구가 조준점보다 앞에 나가 있으면 뒤로 쏘지 않도록 시선 방향을 쓴다
+	const FVector Direction = (AimPoint - MuzzleLocation).GetSafeNormal();
+	return (Direction | ViewDirection) > 0.f ? Direction : ViewDirection;
+}
+
+FVector AHuntWeapon::GetSpawnLocation(const APawn* OwnerPawn) const
+{
+	// 1인칭 총은 줄여 그려 벽 앞에 보여도, 실제 총구(소켓)는 원래 크기 위치라 벽 너머에 있을 수 있다
+	const FVector MuzzleLocation = Mesh->GetSocketLocation(MuzzleBoneName);
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	GetOwnerViewPoint(OwnerPawn, ViewLocation, ViewRotation);
+
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(HuntWeaponMuzzle), false, OwnerPawn);
+	Params.AddIgnoredActor(this);
+	if (GetWorld()->LineTraceSingleByChannel(Hit, ViewLocation, MuzzleLocation, ECC_Visibility, Params))
+	{
+		// 벽 표면에서 살짝 띄워 생기자마자 그 벽에 맞게 한다
+		return Hit.ImpactPoint + Hit.ImpactNormal * 2.f;
+	}
+	return MuzzleLocation;
+}
+
+void AHuntWeapon::GetOwnerViewPoint(const APawn* OwnerPawn, FVector& OutLocation, FRotator& OutRotation)
+{
+	if (const AController* Controller = OwnerPawn->GetController())
+	{
+		Controller->GetPlayerViewPoint(OutLocation, OutRotation);
+	}
+	else
+	{
+		OwnerPawn->GetActorEyesViewPoint(OutLocation, OutRotation);
+	}
 }
 
 void AHuntWeapon::SpawnProjectile(const FVector& Location, const FRotator& Rotation)

@@ -34,6 +34,9 @@ public:
 	// 지금 쏘면 탄이 퍼지는 원뿔의 반각(도). 발사와 크로스헤어가 같이 쓴다
 	float GetCurrentSpread() const;
 
+	// 벽에 막혀 총을 내린 정도(0 = 평소, 1 = 다 내림). 애님은 내린 자세를 이만큼 섞고, 총은 이만큼 총구 방향으로 쏜다
+	float GetWallBlockAlpha() const { return WallBlockAlpha; }
+
 	// 발사 반동. Kick만큼 조준선을 RecoilSmoothTime 동안 올리고, 사격을 멈추면 RecoilRecovery 비율만큼 되돌린다
 	void AddRecoil(const FRotator& Kick);
 
@@ -103,6 +106,27 @@ protected:
 	// 점프·착지 때 탄퍼짐이 공중 값으로(또는 땅 값으로) 바뀌는 속도. 크로스헤어가 튀지 않게 보간한다
 	UPROPERTY(EditDefaultsOnly, Category = "Spread", meta = (ClampMin = "0.0"))
 	float AirSpreadInterpSpeed = 10.f;
+
+	// 카메라 정면으로 벽을 찾는 거리(cm). 벽이 이보다 가까워지면 총을 내리기 시작한다
+	UPROPERTY(EditDefaultsOnly, Category = "WallBlock", meta = (ClampMin = "0.0"))
+	float WallBlockStartDistance = 75.f;
+
+	// 벽이 이 거리(cm) 이하면 총을 다 내린다
+	UPROPERTY(EditDefaultsOnly, Category = "WallBlock", meta = (ClampMin = "0.0"))
+	float WallBlockFullDistance = 45.f;
+
+	// 총을 내리고 올리는 속도
+	UPROPERTY(EditDefaultsOnly, Category = "WallBlock", meta = (ClampMin = "0.0"))
+	float WallBlockInterpSpeed = 10.f;
+
+	// 벽 감지 시작점: 카메라에서 총이 놓이는 쪽(시선 기준 X 앞, Y 오른쪽, Z 위)으로 옮긴 위치(cm)
+	// 실제 총 위치를 쓰면 총을 내릴 때마다 벽에서 멀어져 다시 올라가며 떨리므로 카메라 기준 고정값을 쓴다
+	UPROPERTY(EditDefaultsOnly, Category = "WallBlock")
+	FVector WallBlockSweepOffset = FVector(0.f, 15.f, -10.f);
+
+	// 벽 감지 구의 반경(cm). 시선이 벽과 나란해도 총열이 지나는 공간에 벽이 있으면 걸리도록
+	UPROPERTY(EditDefaultsOnly, Category = "WallBlock", meta = (ClampMin = "0.0"))
+	float WallBlockSweepRadius = 10.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> MoveAction;
@@ -222,6 +246,7 @@ private:
 
 	// 1인칭 팔 (흔들림·킥·조준 정렬)
 	void UpdateWeaponSway(float DeltaSeconds);
+	void UpdateWallBlock(float DeltaSeconds);
 	void UpdateWeaponKick(float DeltaSeconds);
 	void UpdateFirstPersonArms(float AimBlend);
 	FTransform GetSightAlignedArmsTransform(float AimBlend) const;
@@ -244,6 +269,9 @@ private:
 
 	// 공중 탄퍼짐 비율(0 = 땅, 1 = 공중). AirSpreadInterpSpeed로 따라간다
 	float AirSpreadAlpha = 0.f;
+
+	// shortcut: 복제하지 않아 다른 플레이어에게는 총을 내린 자세가 안 보인다, 멀티 점검 때 조준 상태와 함께 복제
+	float WallBlockAlpha = 0.f;
 
 	// 머리를 보간으로 따라가는 카메라 위치(캡슐 기준)
 	FVector HeadCameraLocation = FVector::ZeroVector;

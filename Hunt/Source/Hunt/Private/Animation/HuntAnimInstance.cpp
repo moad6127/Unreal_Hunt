@@ -66,7 +66,9 @@ float UHuntAnimInstance::GetRunAnimSpeed() const
 
 void UHuntAnimInstance::UpdateGaitBlend()
 {
-	bRunGait = Character->IsRunGait();
+	// 조깅 중이어도 걷기 샘플보다 느리면(벽에 막혀 미끄러질 때, 멈추는 중) 걷기로 바꾼다
+	// 조깅 블렌드스페이스는 조깅 샘플 속도로 고정되어 느리면 큰 보폭을 슬로모션으로 밟는다
+	bRunGait = Character->IsRunGait() && GroundSpeed > WalkAnimSpeed;
 	WalkBlendSpeed = FMath::Min(GroundSpeed, WalkAnimSpeed);
 	WalkPlayRate = FMath::Max(1.f, GroundSpeed / WalkAnimSpeed);
 	RunBlendSpeed = FMath::Max(GroundSpeed, JogAnimSpeed);
@@ -96,6 +98,10 @@ void UHuntAnimInstance::UpdateWeapon()
 	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
 	bHasWeapon = Weapon && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent();
 	AimAlpha = Character->GetAimBlend();
+	// 내린 자세 애디티브는 지향사격 상체 기준이라 질주 상체 자세 위에서는 뺀다
+	// shortcut: 400~550은 ABP Move 상태의 질주 상체 블렌드(MapRangeClamped) 구간을 옮겨 적은 것, ABP를 바꾸면 여기도 맞춘다
+	const float SprintUpperBodyWeight = FMath::GetMappedRangeValueClamped(FVector2D(400.f, 550.f), FVector2D(0.f, 1.f), GroundSpeed);
+	WallBlockAlpha = Character->GetWallBlockAlpha() * (1.f - SprintUpperBodyWeight);
 	if (bHasWeapon)
 	{
 		const FTransform HandTransform = GetSkelMeshComponent()->GetSocketTransform(TEXT("hand_r"));
@@ -107,7 +113,8 @@ void UHuntAnimInstance::UpdateAimPitch()
 {
 	// 컨트롤러가 있으면 컨트롤 회전(GetBaseAimRotation은 플레이어면 카메라 회전이라 고정 카메라에서 안 변함), 다른 플레이어 캐릭터는 복제된 피치
 	const FRotator AimRotation = Character->GetController() ? Character->GetControlRotation() : Character->GetBaseAimRotation();
-	AimPitch = FRotator::NormalizeAxis(AimRotation.Pitch);
+	// 벽에 막혀 총을 내린 만큼 위아래 조준을 뺀다. Yaw는 제자리 회전 보정이라 그대로 둔다
+	AimPitch = FRotator::NormalizeAxis(AimRotation.Pitch) * (1.f - Character->GetWallBlockAlpha());
 }
 
 void UHuntAnimInstance::UpdateTurnInPlace(float DeltaSeconds)

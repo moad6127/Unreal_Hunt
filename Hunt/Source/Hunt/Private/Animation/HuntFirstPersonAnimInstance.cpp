@@ -27,6 +27,7 @@ void UHuntFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	// 공중에서는 발을 딛지 않으므로 걷기·달리기 흔들림을 멈춘다
 	bShouldMove = GroundSpeed > 3.f && !Character->GetCharacterMovement()->IsFalling();
 	AimAlpha = Character->GetAimBlend();
+	WallBlockAlpha = Character->GetWallBlockAlpha();
 
 	UpdateLeftHandIK();
 }

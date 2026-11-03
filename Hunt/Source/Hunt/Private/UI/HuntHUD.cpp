@@ -21,7 +21,8 @@ void AHuntHUD::DrawHUD()
 		return;
 	}
 
-	const float Opacity = 1.f - Character->GetAimBlend();
+	// 조준하거나 벽에 막혀 총을 내리면(탄이 크로스헤어로 가지 않음) 흐려진다
+	const float Opacity = (1.f - Character->GetAimBlend()) * (1.f - Character->GetWallBlockAlpha());
 	if (Opacity <= 0.f)
 	{
 		return;

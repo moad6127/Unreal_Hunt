@@ -146,6 +146,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float AimAlpha = 0.f;
 
+	// 벽에 막혀 총을 내린 정도(0~1). 내린 자세 애디티브(A_Rifle_LoweredArms_Additive)의 Alpha로 쓴다
+	// 질주 상체 자세가 섞인 만큼은 뺀 값이다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float WallBlockAlpha = 0.f;
+
 	// 왼손 IK 목표 위치: 총의 왼손 소켓을 오른손(hand_r) 뼈 기준으로 나타낸 값. ABP의 Two Bone IK(Bone Space, hand_r)에 넣는다
 	// 총이 오른손에 붙어 있으므로 이 상대값은 프레임 지연 없이 정확하다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")

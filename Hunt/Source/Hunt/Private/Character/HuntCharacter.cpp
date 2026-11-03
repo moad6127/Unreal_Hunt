@@ -173,6 +173,27 @@ float AHuntCharacter::GetCurrentSpread() const
 	return FMath::Lerp(GroundSpread, Definition->AirSpread, AirSpreadAlpha) * (1.f - GetAimBlend());
 }
 
+void AHuntCharacter::UpdateWallBlock(float DeltaSeconds)
+{
+	float Target = 0.f;
+	if (EquippedWeapon)
+	{
+		const FRotator ViewRotation = GetControlRotation();
+		const FVector Start = FirstPersonCamera->GetComponentLocation() + ViewRotation.RotateVector(WallBlockSweepOffset);
+		const FVector End = Start + ViewRotation.Vector() * WallBlockStartDistance;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(HuntWallBlock), false, this);
+		Params.AddIgnoredActor(EquippedWeapon);
+		Params.AddIgnoredActor(BodyWeapon);
+		FHitResult Hit;
+		// 시작부터 벽 안이면 Distance가 0이라 총을 다 내린다
+		if (GetWorld()->SweepSingleByChannel(Hit, Start, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(WallBlockSweepRadius), Params))
+		{
+			Target = FMath::GetMappedRangeValueClamped(FVector2D(WallBlockFullDistance, WallBlockStartDistance), FVector2D(1.f, 0.f), Hit.Distance);
+		}
+	}
+	WallBlockAlpha = FMath::FInterpTo(WallBlockAlpha, Target, DeltaSeconds, WallBlockInterpSpeed);
+}
+
 void AHuntCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -188,6 +209,7 @@ void AHuntCharacter::Tick(float DeltaSeconds)
 	UpdateHeadCameraLocation(DeltaSeconds);
 	UpdateAimAlpha(DeltaSeconds);
 	AirSpreadAlpha = FMath::FInterpTo(AirSpreadAlpha, GetCharacterMovement()->IsFalling() ? 1.f : 0.f, DeltaSeconds, AirSpreadInterpSpeed);
+	UpdateWallBlock(DeltaSeconds);
 	ApplyRecoil(DeltaSeconds);
 
 	const float AimBlend = GetAimBlend();
@@ -233,11 +255,12 @@ float AHuntCharacter::GetDirectionSpeedScale(float Angle) const
 float AHuntCharacter::GetBaseSpeed(float Angle) const
 {
 	// 조준 중에는 걷기만(걷기 애니메이션 샘플 속도보다 느리면 제자리 걸음처럼 보인다), 질주는 정면 쪽으로 갈 때만
+	// 벽에 막혀 총을 내리면 질주하지 않는다(질주 상체 자세 위에 내린 자세가 겹치면 팔이 꺾인다)
 	if (bWantsToAim)
 	{
 		return WalkSpeed;
 	}
-	if (bWantsToSprint && Angle <= SprintMaxAngle)
+	if (bWantsToSprint && Angle <= SprintMaxAngle && WallBlockAlpha < 0.1f)
 	{
 		return SprintSpeed;
 	}
@@ -267,9 +290,10 @@ void AHuntCharacter::UpdateHeadCameraLocation(float DeltaSeconds)
 
 void AHuntCharacter::UpdateAimAlpha(float DeltaSeconds)
 {
-	// 조준 진행도: 총의 조준 시간 동안 일정하게 0↔1. 공중에서는 조준이 풀리고, 버튼을 누르고 있으면 착지 후 다시 조준한다
+	// 조준 진행도: 총의 조준 시간 동안 일정하게 0↔1. 공중이거나 벽에 막혀 총을 내리면 조준이 풀리고, 버튼을 누르고 있으면 다시 조준한다
 	const UWeaponDefinition* Definition = GetWeaponDefinition();
-	const float AimTarget = (bWantsToAim && Definition && !GetCharacterMovement()->IsFalling()) ? 1.f : 0.f;
+	const bool bCanAim = Definition && !GetCharacterMovement()->IsFalling() && WallBlockAlpha < 0.1f;
+	const float AimTarget = (bWantsToAim && bCanAim) ? 1.f : 0.f;
 	const float AimSpeed = Definition ? 1.f / Definition->AimDownSightsTime : 10.f;
 	AimAlpha = FMath::FInterpConstantTo(AimAlpha, AimTarget, DeltaSeconds, AimSpeed);
 }

@@ -34,6 +34,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float AimAlpha = 0.f;
 
+	// 벽에 막혀 총을 내린 정도(0~1). 내린 자세 애디티브(A_Rifle_LoweredArms_Additive)의 Alpha로 쓴다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float WallBlockAlpha = 0.f;
+
 	// 총이 이 팔에 붙어 있고 1인칭 왼손 소켓이 있으면 true. 왼손 IK의 Alpha로 쓴다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	bool bLeftHandIK = false;

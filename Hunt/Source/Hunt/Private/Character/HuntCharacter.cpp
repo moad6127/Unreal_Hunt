@@ -160,6 +160,11 @@ const UWeaponDefinition* AHuntCharacter::GetWeaponDefinition() const
 	return EquippedWeapon ? EquippedWeapon->Definition.Get() : nullptr;
 }
 
+bool AHuntCharacter::CanSprint(float Angle) const
+{
+	return !bWantsToAim && bWantsToSprint && Angle <= SprintMaxAngle && WallBlockAlpha < 0.1f;
+}
+
 float AHuntCharacter::GetCurrentSpread() const
 {
 	const UWeaponDefinition* Definition = GetWeaponDefinition();
@@ -260,7 +265,7 @@ float AHuntCharacter::GetBaseSpeed(float Angle) const
 	{
 		return WalkSpeed;
 	}
-	if (bWantsToSprint && Angle <= SprintMaxAngle && WallBlockAlpha < 0.1f)
+	if (CanSprint(Angle))
 	{
 		return SprintSpeed;
 	}

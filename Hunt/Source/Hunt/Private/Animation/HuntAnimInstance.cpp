@@ -5,6 +5,26 @@
 #include "Character/HuntCharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
+#include "Animation/AnimSequence.h"
+
+UAnimSequence* FHuntDirectionalAnims::Pick(float Direction) const
+{
+	// 각 방향의 기준 각도. 비어 있으면 다음으로 가까운 방향을 쓴다
+	const TPair<float, UAnimSequence*> Slots[] = {
+		{0.f, F}, {-45.f, FL}, {45.f, FR}, {-90.f, L}, {90.f, R}, {-135.f, BL}, {135.f, BR}, {180.f, B}};
+	UAnimSequence* Best = nullptr;
+	float BestDelta = TNumericLimits<float>::Max();
+	for (const TPair<float, UAnimSequence*>& Slot : Slots)
+	{
+		const float Delta = FMath::Abs(FRotator::NormalizeAxis(Direction - Slot.Key));
+		if (Slot.Value && Delta < BestDelta)
+		{
+			Best = Slot.Value;
+			BestDelta = Delta;
+		}
+	}
+	return Best;
+}
 
 void UHuntAnimInstance::NativeInitializeAnimation()
 {
@@ -28,6 +48,7 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	UpdateVelocity();
+	UpdateStartStop(DeltaSeconds);
 	UpdateFoldedDirections();
 	UpdateGaitBlend();
 	UpdateMovingBackward();
@@ -44,6 +65,94 @@ void UHuntAnimInstance::UpdateVelocity()
 	// 키를 떼도 몸이 미끄러지는 동안은 이동 애니메이션을 유지해 속도에 맞춰 발걸음이 줄어들며 멈춘다
 	bShouldMove = GroundSpeed > 3.f;
 	bIsFalling = Character->GetCharacterMovement()->IsFalling();
+}
+
+float UHuntAnimInstance::FindTimeAtDistance(const UAnimSequence* Anim, float Distance)
+{
+	static const FName CurveName(TEXT("Distance"));
+	float Low = 0.f;
+	float High = Anim->GetPlayLength();
+	for (int32 Step = 0; Step < 16; ++Step)
+	{
+		const float Mid = (Low + High) * 0.5f;
+		if (Anim->EvaluateCurveData(CurveName, FAnimExtractContext(Mid)) < Distance)
+		{
+			Low = Mid;
+		}
+		else
+		{
+			High = Mid;
+		}
+	}
+	return High;
+}
+
+float UHuntAnimInstance::FindStopTimeAtSpeed(const UAnimSequence* Anim, float Speed)
+{
+	// 속도는 Distance 커브(루트 이동 거리)의 변화량으로 구한다. movedata_speed 커브는 방향마다 부호·유무가 달라 믿지 않는다
+	// 멈추는 지점에서 거꾸로 훑어, 애니메이션이 마지막으로 Speed 이상이던 시각부터 재생한다(걸음마다 속도가 출렁여도 접근 걸음을 건너뛴다)
+	// 애니메이션이 그만큼 빠른 적이 없으면(질주 600 > GASP 500) 멈추는 지점 1.5초 안에서 가장 빠른 시각
+	static const FName CurveName(TEXT("Distance"));
+	constexpr float Step = 1.f / 30.f;
+	const float StopPoint = FindTimeAtDistance(Anim, -1.f);
+	float FastestTime = StopPoint;
+	float FastestSpeed = 0.f;
+	for (float Time = StopPoint - Step; Time >= FMath::Max(StopPoint - 1.5f, 0.f); Time -= Step)
+	{
+		const float AnimSpeed = (Anim->EvaluateCurveData(CurveName, FAnimExtractContext(Time + Step))
+			- Anim->EvaluateCurveData(CurveName, FAnimExtractContext(Time))) / Step;
+		if (AnimSpeed >= Speed)
+		{
+			return Time;
+		}
+		if (AnimSpeed > FastestSpeed)
+		{
+			FastestSpeed = AnimSpeed;
+			FastestTime = Time;
+		}
+	}
+	return FastestTime;
+}
+
+float UHuntAnimInstance::EstimateBrakingTime(float Speed) const
+{
+	// 이동 컴포넌트 제동: dv/dt = -(Friction × v + Decel). v=0까지 걸리는 시간 = ln(1 + Friction × v / Decel) / Friction
+	const UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
+	const float Friction = (Movement->bUseSeparateBrakingFriction ? Movement->BrakingFriction : Movement->GroundFriction) * Movement->BrakingFrictionFactor;
+	const float Decel = FMath::Max(Movement->BrakingDecelerationWalking, 1.f);
+	return Friction > KINDA_SMALL_NUMBER ? FMath::Loge(1.f + Friction * Speed / Decel) / Friction : Speed / Decel;
+}
+
+void UHuntAnimInstance::UpdateStartStop(float DeltaSeconds)
+{
+	const UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
+	const FVector Acceleration = Movement->GetCurrentAcceleration();
+	bHasAcceleration = !FVector2D(Acceleration).IsNearlyZero();
+
+	// 키를 뗀 순간: 이동 방향과 속도로 정지 애니메이션을 고르고, 지금 속도와 같은 지점부터 재생한다
+	// 거리 맞춤은 쓰지 않는다: 캐릭터는 십수 cm 만에 서는데 GASP 정지는 2~4m에 걸쳐 감속해 끝 자세로 바로 건너뛴다
+	// shortcut: 450은 조깅(350)과 질주(600) 사이 기준, 걸음 속도를 바꾸면 맞춘다
+	if (!bHasAcceleration && bWasAccelerating)
+	{
+		StopAnim = (GroundSpeed > 450.f ? SprintStops : WalkStops).Pick(Direction);
+		if (StopAnim)
+		{
+			StopTime = FindStopTimeAtSpeed(StopAnim, GroundSpeed);
+			StopPointTime = FMath::Max(FindTimeAtDistance(StopAnim, -1.f), StopTime);
+			StopEndTime = FMath::Min(StopPointTime + StopSettleTime, StopAnim->GetPlayLength());
+			// 캐릭터가 멈추는 시각에 애니메이션도 멈추는 지점에 닿게 한다(너무 느리거나 빠르지 않게 1~3배)
+			StopRate = FMath::Clamp((StopPointTime - StopTime) / FMath::Max(EstimateBrakingTime(GroundSpeed), 0.05f), 1.f, 3.f);
+		}
+	}
+	bWasAccelerating = bHasAcceleration;
+
+	// 정지: 멈추는 지점까지는 StopRate, 마무리는 1배로 재생하고 끝 시간에 닿으면 끝
+	if (!bHasAcceleration && StopAnim)
+	{
+		const float Rate = StopTime < StopPointTime ? StopRate : 1.f;
+		StopTime = FMath::Min(StopTime + DeltaSeconds * Rate, StopAnim->GetPlayLength());
+	}
+	bStopFinished = !bHasAcceleration && (!StopAnim || StopTime >= StopEndTime);
 }
 
 void UHuntAnimInstance::UpdateFoldedDirections()

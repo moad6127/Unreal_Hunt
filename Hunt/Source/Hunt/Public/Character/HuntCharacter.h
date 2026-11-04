@@ -232,6 +232,8 @@ private:
 	float GetInputAngle(const FVector& InputDirection) const;
 	float GetDirectionSpeedScale(float Angle) const;
 	float GetBaseSpeed(float Angle) const;
+	// 이 입력 각도(정면 기준 0~180)로 질주할 수 있는지. 속도 계산과 출발 애니메이션 선택이 같은 조건을 쓴다
+	bool CanSprint(float Angle) const;
 	void ApproachMaxWalkSpeed(float TargetSpeed, float DeltaSeconds);
 
 	// 카메라·조준

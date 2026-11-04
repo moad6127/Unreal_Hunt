@@ -7,6 +7,26 @@
 #include "HuntAnimInstance.generated.h"
 
 class AHuntCharacter;
+class UAnimSequence;
+
+// 이동 방향별 애니메이션 한 벌. 비워 둔 방향은 가장 가까운 방향(없으면 F)을 쓴다
+USTRUCT(BlueprintType)
+struct FHuntDirectionalAnims
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> F;
+	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> FL;
+	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> FR;
+	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> L;
+	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> R;
+	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> BL;
+	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> BR;
+	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> B;
+
+	// Direction: 캐릭터 정면 기준 -180~180(+ = 오른쪽)
+	UAnimSequence* Pick(float Direction) const;
+};
 
 /**
  * 3인칭 전신용. 다른 사람이 보는 내 몸, 내 그림자, 내 하체(Leader Pose)가 이 포즈를 쓴다
@@ -36,6 +56,35 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bIsFalling = false;
+
+	// 이동 키를 누르고 있다(가속 중). 출발·정지 상태 전환에 쓴다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StartStop")
+	bool bHasAcceleration = false;
+
+	// 정지 애니메이션을 끝까지(멈추는 지점 + StopSettleTime) 재생했다. Stop → Idle 조건
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StartStop")
+	bool bStopFinished = false;
+
+	// 정지 애니메이션의 멈추는 지점 뒤로 더 재생할 시간(초). 무게를 싣고 서는 마무리 자세
+	UPROPERTY(EditDefaultsOnly, Category = "StartStop", meta = (ClampMin = "0.0"))
+	float StopSettleTime = 0.3f;
+
+	// 지금 재생할 정지 애니메이션. Stop 상태의 Sequence Evaluator에 넣는다
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "StartStop")
+	TObjectPtr<UAnimSequence> StopAnim;
+
+	// 정지 애니메이션 재생 위치(초). Sequence Evaluator의 Explicit Time에 넣는다
+	// 지금 속도와 같은 지점에서 시작해, 캐릭터가 실제로 멈추는 시각에 애니메이션도 멈추는 지점에 닿도록 빠르게 재생한다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StartStop")
+	float StopTime = 0.f;
+
+	// 질주 정지(GASP 달리기 정지)
+	UPROPERTY(EditDefaultsOnly, Category = "StartStop")
+	FHuntDirectionalAnims SprintStops;
+
+	// 걷기·조깅 정지(GASP 걷기 정지)
+	UPROPERTY(EditDefaultsOnly, Category = "StartStop")
+	FHuntDirectionalAnims WalkStops;
 
 	// 뒤쪽 반구로 이동 중이면 true. 앞/뒤 이동 블렌드스페이스를 고른다(옆걸음 애니메이션이 앞뒤로 엉덩이 방향이 달라서)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
@@ -161,6 +210,20 @@ private:
 	TObjectPtr<AHuntCharacter> Character;
 
 	void UpdateVelocity();
+	void UpdateStartStop(float DeltaSeconds);
+	// Distance 커브가 Distance가 되는 재생 시간. 커브는 시간에 따라 늘어나므로 이분 탐색
+	static float FindTimeAtDistance(const UAnimSequence* Anim, float Distance);
+	// 정지 애니메이션에서 멈추기 전 마지막으로 루트 속도가 Speed 이상이던 재생 시간
+	static float FindStopTimeAtSpeed(const UAnimSequence* Anim, float Speed);
+
+	// 이동 설정의 제동(마찰 + 감속)으로 Speed에서 멈출 때까지 걸리는 시간(초)
+	float EstimateBrakingTime(float Speed) const;
+
+	// 정지 애니메이션에서 멈추는 지점(Distance 커브 0)과, 끝낼 시간(멈추는 지점 + StopSettleTime)
+	float StopPointTime = 0.f;
+	float StopEndTime = 0.f;
+	// 멈추는 지점까지의 재생 속도(캐릭터가 실제로 멈추는 시각에 맞춘 값). 그 뒤 마무리는 1배
+	float StopRate = 1.f;
 	void UpdateFoldedDirections();
 	// 현재 방향의 가장 빠른 이동 애니메이션 속도
 	float GetRunAnimSpeed() const;
@@ -176,6 +239,7 @@ private:
 	void TryStartTurn(bool bCanTurn);
 
 	float PrevActorYaw = 0.f;
+	bool bWasAccelerating = false;
 	// 회전 애니메이션의 RemainingTurnYaw(가중치로 나눈 값) 직전 프레임 값
 	float PrevTurnYawCurve = 0.f;
 	bool bTurnCurveActive = false;

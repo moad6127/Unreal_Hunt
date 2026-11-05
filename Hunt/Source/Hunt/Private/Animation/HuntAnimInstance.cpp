@@ -6,24 +6,12 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
 #include "Animation/AnimSequence.h"
+#include "Components/SkeletalMeshComponent.h"
 
-UAnimSequence* FHuntDirectionalAnims::Pick(float Direction) const
+namespace
 {
-	// 각 방향의 기준 각도. 비어 있으면 다음으로 가까운 방향을 쓴다
-	const TPair<float, UAnimSequence*> Slots[] = {
-		{0.f, F}, {-45.f, FL}, {45.f, FR}, {-90.f, L}, {90.f, R}, {-135.f, BL}, {135.f, BR}, {180.f, B}};
-	UAnimSequence* Best = nullptr;
-	float BestDelta = TNumericLimits<float>::Max();
-	for (const TPair<float, UAnimSequence*>& Slot : Slots)
-	{
-		const float Delta = FMath::Abs(FRotator::NormalizeAxis(Direction - Slot.Key));
-		if (Slot.Value && Delta < BestDelta)
-		{
-			Best = Slot.Value;
-			BestDelta = Delta;
-		}
-	}
-	return Best;
+	const FName FootBones[2] = {TEXT("foot_l"), TEXT("foot_r")};
+	const FName IKFootBones[2] = {TEXT("ik_foot_l"), TEXT("ik_foot_r")};
 }
 
 void UHuntAnimInstance::NativeInitializeAnimation()
@@ -34,6 +22,27 @@ void UHuntAnimInstance::NativeInitializeAnimation()
 	if (Character)
 	{
 		PrevActorYaw = Character->GetActorRotation().Yaw;
+	}
+
+	// Idle 자세의 발 자리 = ik_foot 뼈의 컴포넌트 공간 위치(애니메이션마다 발 위치로 구워 둠). 뼈를 부모까지 거슬러 합친다
+	if (IdleAnim && IdleAnim->GetSkeleton())
+	{
+		const FReferenceSkeleton& RefSkeleton = IdleAnim->GetSkeleton()->GetReferenceSkeleton();
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			FTransform ComponentTransform = FTransform::Identity;
+			for (int32 Bone = RefSkeleton.FindBoneIndex(IKFootBones[Side]); Bone != INDEX_NONE; Bone = RefSkeleton.GetParentIndex(Bone))
+			{
+				FTransform Local;
+				IdleAnim->GetBoneTransform(Local, FSkeletonPoseBoneIndex(Bone), FAnimExtractContext(0.0), false);
+				ComponentTransform = ComponentTransform * Local;
+			}
+			Feet[Side].IdleLocation = ComponentTransform.GetLocation();
+		}
+	}
+	if (Character)
+	{
+		UE_LOG(LogTemp, Log, TEXT("FootLock: %s idle L=%s R=%s"), *GetPathName(), *Feet[0].IdleLocation.ToString(), *Feet[1].IdleLocation.ToString());
 	}
 }
 
@@ -48,111 +57,129 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	UpdateVelocity();
-	UpdateStartStop(DeltaSeconds);
 	UpdateFoldedDirections();
 	UpdateGaitBlend();
 	UpdateMovingBackward();
 	UpdateWeapon();
 	UpdateAimPitch();
 	UpdateTurnInPlace(DeltaSeconds);
+	UpdateFootLock(DeltaSeconds);
+}
+
+void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
+{
+	// 제자리 회전 중에는 회전 애니메이션이 발을 옮기므로 고정하지 않는다
+	const bool bStanding = !bShouldMove && !bIsFalling && TurnDirection == 0;
+	// 이동하다 멈췄을 때만 고정한다. 시작 직후(첫 프레임은 기본 포즈)나 제자리 회전 뒤에는 애니메이션 그대로
+	const bool bJustStopped = bStanding && bWasMovingForFootLock;
+	bWasMovingForFootLock = bShouldMove;
+	StandingTime = bStanding ? StandingTime + DeltaSeconds : 0.f;
+
+	const USkeletalMeshComponent* Mesh = GetOwningComponent();
+	const FTransform& MeshTransform = Mesh->GetComponentTransform();
+	// Idle 자리도 ABP의 Rotate Root Bone(RootYawOffset)만큼 돌아가 있다
+	const FQuat RootYaw(FRotator(0.f, RootYawOffset, 0.f));
+	// 몸 기준 옆 위치(X, + = 왼쪽). 루트 회전을 되돌린 컴포넌트 공간
+	const auto BodyX = [&MeshTransform, ToBody = RootYaw.Inverse()](const FVector& World)
+	{
+		return ToBody.RotateVector(MeshTransform.InverseTransformPosition(World)).X;
+	};
+	FVector IdleWorld[2];
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		FFootLock& Foot = Feet[Side];
+		IdleWorld[Side] = MeshTransform.TransformPosition(RootYaw.RotateVector(Foot.IdleLocation));
+		FVector Target = Foot.LockedWorld;
+		if (!bStanding || (!Foot.bLocked && !bJustStopped))
+		{
+			// 움직이기 시작하면 고정을 짧게 풀어 발이 순간 이동하지 않게 한다
+			Foot.bLocked = false;
+			Foot.bStepping = false;
+			Foot.Alpha = FMath::FInterpConstantTo(Foot.Alpha, 0.f, DeltaSeconds, 1.f / FootUnlockTime);
+		}
+		else if (!Foot.bLocked)
+		{
+			// 멈춘 순간: 지금 발 자리(지난 프레임 최종 포즈)의 바닥 높이에 고정한다
+			// 디딘 발은 바로, 들려 있던 발은 내려놓으며 천천히 고정한다
+			FVector FootLocal = MeshTransform.InverseTransformPosition(Mesh->GetBoneLocation(FootBones[Side]));
+			const bool bGrounded = FootLocal.Z - Foot.IdleLocation.Z < FootStepLift;
+			FootLocal.Z = Foot.IdleLocation.Z;
+			Foot.LockedWorld = MeshTransform.TransformPosition(FootLocal);
+			Foot.Alpha = bGrounded ? 1.f : 0.f;
+			Foot.bLocked = true;
+			Foot.bStepped = false;
+			Target = Foot.LockedWorld;
+			UE_LOG(LogTemp, Log, TEXT("FootLock: lock %s grounded=%d offset=%.1f"), Side == 0 ? TEXT("L") : TEXT("R"),
+				bGrounded, FVector::Dist2D(Foot.LockedWorld, IdleWorld[Side]));
+		}
+		else
+		{
+			Foot.Alpha = FMath::FInterpConstantTo(Foot.Alpha, 1.f, DeltaSeconds, 1.f / 0.15f);
+			// 한 걸음 중: 고정 자리 → Idle 자리로 발을 들어 옮긴다. 끝나면 Idle 자리에 다시 고정
+			if (Foot.bStepping)
+			{
+				Foot.StepTime += DeltaSeconds;
+				const float Progress = FMath::SmoothStep(0.f, 1.f, Foot.StepTime / FootStepDuration);
+				Target = FMath::Lerp(Foot.StepStartWorld, IdleWorld[Side], Progress)
+					+ MeshTransform.GetUnitAxis(EAxis::Z) * FootStepLift * FMath::Sin(PI * Progress);
+				// 반대쪽 발을 넘어가지 않게 옆으로 최소 간격을 둔다. 꼬인 채 시작했으면 발을 들면서 점점 벌린다
+				const FFootLock& Other = Feet[1 - Side];
+				if (Other.bLocked)
+				{
+					const FVector Local = MeshTransform.InverseTransformPosition(Target);
+					const float OtherX = BodyX(Other.LockedWorld);
+					const float X = BodyX(Target);
+					const float SafeX = Side == 0 ? FMath::Max(X, OtherX + FootStepMinGap) : FMath::Min(X, OtherX - FootStepMinGap);
+					const FVector Side2D = RootYaw.RotateVector(FVector::XAxisVector);
+					Target = MeshTransform.TransformPosition(Local + Side2D * (SafeX - X) * Progress);
+				}
+				if (Foot.StepTime >= FootStepDuration)
+				{
+					// 간격 때문에 밀린 자리도 그대로 고정한다(Idle 자리로 튀지 않게)
+					Foot.bStepping = false;
+					Foot.LockedWorld = Target;
+				}
+			}
+		}
+		(Side == 0 ? FootLockAlphaL : FootLockAlphaR) = Foot.Alpha;
+		(Side == 0 ? FootLockLocationL : FootLockLocationR) = MeshTransform.InverseTransformPosition(Target);
+	}
+
+	// 서고 나서 고정된 발이 Idle 자리에서 많이 벗어나 있으면 더 벗어난 발부터 한 걸음씩 옮긴다(멈출 때마다 발마다 한 번)
+	// 두 발이 꼬여 있으면(왼발이 오른발보다 오른쪽) 거리와 상관없이 옮긴다
+	if (!bStanding || StandingTime < FootStepDelay || Feet[0].bStepping || Feet[1].bStepping)
+	{
+		return;
+	}
+	const bool bCrossed = Feet[0].bLocked && Feet[1].bLocked
+		&& BodyX(Feet[0].LockedWorld) - BodyX(Feet[1].LockedWorld) < FootStepMinGap;
+	float Offsets[2];
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		Offsets[Side] = Feet[Side].bLocked && !Feet[Side].bStepped ? FVector::Dist2D(Feet[Side].LockedWorld, IdleWorld[Side]) : 0.f;
+	}
+	const int32 Side = Offsets[0] >= Offsets[1] ? 0 : 1;
+	if (Offsets[Side] > FootStepThreshold || (bCrossed && Offsets[Side] > KINDA_SMALL_NUMBER))
+	{
+		FFootLock& Foot = Feet[Side];
+		Foot.bStepping = true;
+		Foot.bStepped = true;
+		Foot.StepTime = 0.f;
+		Foot.StepStartWorld = Foot.LockedWorld;
+		UE_LOG(LogTemp, Log, TEXT("FootLock: step %s offset=%.1f crossed=%d"), Side == 0 ? TEXT("L") : TEXT("R"), Offsets[Side], bCrossed);
+	}
 }
 
 void UHuntAnimInstance::UpdateVelocity()
 {
 	const FVector Velocity = Character->GetVelocity();
 	GroundSpeed = Velocity.Size2D();
-	Direction = GroundSpeed > KINDA_SMALL_NUMBER ? FRotator::NormalizeAxis(Velocity.Rotation().Yaw - Character->GetActorRotation().Yaw) : 0.f;
+	VelocityDirection = GroundSpeed > KINDA_SMALL_NUMBER ? FRotator::NormalizeAxis(Velocity.Rotation().Yaw - Character->GetActorRotation().Yaw) : 0.f;
+	// 이동 블렌드스페이스는 돌아간 몸 기준 방향으로 고른다(몸이 이동 방향 쪽으로 돌아가 있으면 옆걸음이 대각선 걸음이 된다)
+	Direction = GroundSpeed > KINDA_SMALL_NUMBER ? FRotator::NormalizeAxis(VelocityDirection - RootYawOffset) : 0.f;
 	// 키를 떼도 몸이 미끄러지는 동안은 이동 애니메이션을 유지해 속도에 맞춰 발걸음이 줄어들며 멈춘다
 	bShouldMove = GroundSpeed > 3.f;
 	bIsFalling = Character->GetCharacterMovement()->IsFalling();
-}
-
-float UHuntAnimInstance::FindTimeAtDistance(const UAnimSequence* Anim, float Distance)
-{
-	static const FName CurveName(TEXT("Distance"));
-	float Low = 0.f;
-	float High = Anim->GetPlayLength();
-	for (int32 Step = 0; Step < 16; ++Step)
-	{
-		const float Mid = (Low + High) * 0.5f;
-		if (Anim->EvaluateCurveData(CurveName, FAnimExtractContext(Mid)) < Distance)
-		{
-			Low = Mid;
-		}
-		else
-		{
-			High = Mid;
-		}
-	}
-	return High;
-}
-
-float UHuntAnimInstance::FindStopTimeAtSpeed(const UAnimSequence* Anim, float Speed)
-{
-	// 속도는 Distance 커브(루트 이동 거리)의 변화량으로 구한다. movedata_speed 커브는 방향마다 부호·유무가 달라 믿지 않는다
-	// 멈추는 지점에서 거꾸로 훑어, 애니메이션이 마지막으로 Speed 이상이던 시각부터 재생한다(걸음마다 속도가 출렁여도 접근 걸음을 건너뛴다)
-	// 애니메이션이 그만큼 빠른 적이 없으면(질주 600 > GASP 500) 멈추는 지점 1.5초 안에서 가장 빠른 시각
-	static const FName CurveName(TEXT("Distance"));
-	constexpr float Step = 1.f / 30.f;
-	const float StopPoint = FindTimeAtDistance(Anim, -1.f);
-	float FastestTime = StopPoint;
-	float FastestSpeed = 0.f;
-	for (float Time = StopPoint - Step; Time >= FMath::Max(StopPoint - 1.5f, 0.f); Time -= Step)
-	{
-		const float AnimSpeed = (Anim->EvaluateCurveData(CurveName, FAnimExtractContext(Time + Step))
-			- Anim->EvaluateCurveData(CurveName, FAnimExtractContext(Time))) / Step;
-		if (AnimSpeed >= Speed)
-		{
-			return Time;
-		}
-		if (AnimSpeed > FastestSpeed)
-		{
-			FastestSpeed = AnimSpeed;
-			FastestTime = Time;
-		}
-	}
-	return FastestTime;
-}
-
-float UHuntAnimInstance::EstimateBrakingTime(float Speed) const
-{
-	// 이동 컴포넌트 제동: dv/dt = -(Friction × v + Decel). v=0까지 걸리는 시간 = ln(1 + Friction × v / Decel) / Friction
-	const UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
-	const float Friction = (Movement->bUseSeparateBrakingFriction ? Movement->BrakingFriction : Movement->GroundFriction) * Movement->BrakingFrictionFactor;
-	const float Decel = FMath::Max(Movement->BrakingDecelerationWalking, 1.f);
-	return Friction > KINDA_SMALL_NUMBER ? FMath::Loge(1.f + Friction * Speed / Decel) / Friction : Speed / Decel;
-}
-
-void UHuntAnimInstance::UpdateStartStop(float DeltaSeconds)
-{
-	const UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
-	const FVector Acceleration = Movement->GetCurrentAcceleration();
-	bHasAcceleration = !FVector2D(Acceleration).IsNearlyZero();
-
-	// 키를 뗀 순간: 이동 방향과 속도로 정지 애니메이션을 고르고, 지금 속도와 같은 지점부터 재생한다
-	// 거리 맞춤은 쓰지 않는다: 캐릭터는 십수 cm 만에 서는데 GASP 정지는 2~4m에 걸쳐 감속해 끝 자세로 바로 건너뛴다
-	// shortcut: 450은 조깅(350)과 질주(600) 사이 기준, 걸음 속도를 바꾸면 맞춘다
-	if (!bHasAcceleration && bWasAccelerating)
-	{
-		StopAnim = (GroundSpeed > 450.f ? SprintStops : WalkStops).Pick(Direction);
-		if (StopAnim)
-		{
-			StopTime = FindStopTimeAtSpeed(StopAnim, GroundSpeed);
-			StopPointTime = FMath::Max(FindTimeAtDistance(StopAnim, -1.f), StopTime);
-			StopEndTime = FMath::Min(StopPointTime + StopSettleTime, StopAnim->GetPlayLength());
-			// 캐릭터가 멈추는 시각에 애니메이션도 멈추는 지점에 닿게 한다(너무 느리거나 빠르지 않게 1~3배)
-			StopRate = FMath::Clamp((StopPointTime - StopTime) / FMath::Max(EstimateBrakingTime(GroundSpeed), 0.05f), 1.f, 3.f);
-		}
-	}
-	bWasAccelerating = bHasAcceleration;
-
-	// 정지: 멈추는 지점까지는 StopRate, 마무리는 1배로 재생하고 끝 시간에 닿으면 끝
-	if (!bHasAcceleration && StopAnim)
-	{
-		const float Rate = StopTime < StopPointTime ? StopRate : 1.f;
-		StopTime = FMath::Min(StopTime + DeltaSeconds * Rate, StopAnim->GetPlayLength());
-	}
-	bStopFinished = !bHasAcceleration && (!StopAnim || StopTime >= StopEndTime);
 }
 
 void UHuntAnimInstance::UpdateFoldedDirections()
@@ -252,8 +279,29 @@ void UHuntAnimInstance::UpdateRootYawOffset(float DeltaSeconds, bool bCanTurn)
 	}
 	else
 	{
-		RootYawOffset = FMath::FInterpTo(RootYawOffset, 0.f, DeltaSeconds, RootYawBlendOutSpeed);
+		// 이동 중: 몸을 이동 방향 쪽으로 돌린다. 뒤로 갈 때는 바로 뒤를 기준으로(뒷걸음 그대로, 옆으로 기운 만큼만)
+		// 앞뒤 판정은 캐릭터 정면 기준 실제 이동 방향으로 한다. 돌아간 몸 기준(bMovingBackward)으로 하면
+		// 왼쪽 → 오른쪽 전환 때 "뒤로 가는 중"이 되어 몸이 처음 방향에 붙잡힌다
+		const float AbsVelocityDirection = FMath::Abs(VelocityDirection);
+		if (AbsVelocityDirection > 90.f + BackwardHysteresis)
+		{
+			bHipsBackward = true;
+		}
+		else if (AbsVelocityDirection < 90.f - BackwardHysteresis)
+		{
+			bHipsBackward = false;
+		}
+		const float FromFacing = bHipsBackward ? FRotator::NormalizeAxis(VelocityDirection + 180.f) : VelocityDirection;
+		const float Target = bIsFalling || !bShouldMove ? 0.f : FromFacing * MoveHipYawRatio;
+		RootYawOffset = FMath::FInterpTo(RootYawOffset, Target, DeltaSeconds, RootYawBlendOutSpeed);
 		TurnDirection = 0;
+		HipYawLogTime += DeltaSeconds;
+		if (bShouldMove && HipYawLogTime > 0.25f)
+		{
+			HipYawLogTime = 0.f;
+			UE_LOG(LogTemp, Log, TEXT("HipYaw: vel=%.0f hipsBack=%d target=%.0f root=%.0f dir=%.0f moveBack=%d speed=%.0f"),
+				VelocityDirection, bHipsBackward, Target, RootYawOffset, Direction, bMovingBackward, GroundSpeed);
+		}
 	}
 }
 

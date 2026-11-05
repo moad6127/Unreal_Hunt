@@ -9,25 +9,6 @@
 class AHuntCharacter;
 class UAnimSequence;
 
-// 이동 방향별 애니메이션 한 벌. 비워 둔 방향은 가장 가까운 방향(없으면 F)을 쓴다
-USTRUCT(BlueprintType)
-struct FHuntDirectionalAnims
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> F;
-	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> FL;
-	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> FR;
-	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> L;
-	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> R;
-	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> BL;
-	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> BR;
-	UPROPERTY(EditAnywhere) TObjectPtr<UAnimSequence> B;
-
-	// Direction: 캐릭터 정면 기준 -180~180(+ = 오른쪽)
-	UAnimSequence* Pick(float Direction) const;
-};
-
 /**
  * 3인칭 전신용. 다른 사람이 보는 내 몸, 내 그림자, 내 하체(Leader Pose)가 이 포즈를 쓴다
  * 캐릭터 상태만 계산해 둔다. 스테이트 머신·블렌드는 ABP에서 구성
@@ -56,35 +37,6 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bIsFalling = false;
-
-	// 이동 키를 누르고 있다(가속 중). 출발·정지 상태 전환에 쓴다
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StartStop")
-	bool bHasAcceleration = false;
-
-	// 정지 애니메이션을 끝까지(멈추는 지점 + StopSettleTime) 재생했다. Stop → Idle 조건
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StartStop")
-	bool bStopFinished = false;
-
-	// 정지 애니메이션의 멈추는 지점 뒤로 더 재생할 시간(초). 무게를 싣고 서는 마무리 자세
-	UPROPERTY(EditDefaultsOnly, Category = "StartStop", meta = (ClampMin = "0.0"))
-	float StopSettleTime = 0.3f;
-
-	// 지금 재생할 정지 애니메이션. Stop 상태의 Sequence Evaluator에 넣는다
-	UPROPERTY(Transient, BlueprintReadOnly, Category = "StartStop")
-	TObjectPtr<UAnimSequence> StopAnim;
-
-	// 정지 애니메이션 재생 위치(초). Sequence Evaluator의 Explicit Time에 넣는다
-	// 지금 속도와 같은 지점에서 시작해, 캐릭터가 실제로 멈추는 시각에 애니메이션도 멈추는 지점에 닿도록 빠르게 재생한다
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StartStop")
-	float StopTime = 0.f;
-
-	// 질주 정지(GASP 달리기 정지)
-	UPROPERTY(EditDefaultsOnly, Category = "StartStop")
-	FHuntDirectionalAnims SprintStops;
-
-	// 걷기·조깅 정지(GASP 걷기 정지)
-	UPROPERTY(EditDefaultsOnly, Category = "StartStop")
-	FHuntDirectionalAnims WalkStops;
 
 	// 뒤쪽 반구로 이동 중이면 true. 앞/뒤 이동 블렌드스페이스를 고른다(옆걸음 애니메이션이 앞뒤로 엉덩이 방향이 달라서)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
@@ -179,9 +131,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
 	float TurnRetriggerDelay = 0.2f;
 
-	// 움직이기 시작하면 몸이 시선 방향으로 돌아오는 속도
+	// 움직이는 동안 몸이 목표 방향(시선 또는 아래 이동 방향 쪽)으로 돌아가는 속도
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
 	float RootYawBlendOutSpeed = 10.f;
+
+	// ALS처럼 옆으로 갈 때 몸(골반)을 이동 방향 쪽으로 이 비율만큼 돌린다. 상체는 에임 오프셋(AimYaw)이 시선으로 되돌린다
+	// 0.5면 정옆 이동 때 45도: 다리는 몸 기준 대각선으로 걸어 꼬이지 않고, 제자리 회전 시작 각도(TurnStartAngle)보다 작아 멈춰도 바로 돌지 않는다
+	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MoveHipYawRatio = 0.5f;
 
 	// 전신 손의 총(BodyWeapon)이 이 메시에 붙어 있으면 true
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
@@ -205,25 +162,53 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	FVector LeftHandIKLocation = FVector::ZeroVector;
 
+	// 발 고정(ALS Foot Lock): 멈추는 순간 디딘 발을 월드에 고정해 Idle로 섞이는 동안 미끄러지지 않게 한다
+	// ABP가 발 IK(Control Rig) 앞에서 ik_foot_l/r을 이 위치(컴포넌트 공간)로 옮긴다. Alpha가 0이면 애니메이션 그대로
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FootLock")
+	float FootLockAlphaL = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FootLock")
+	float FootLockAlphaR = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FootLock")
+	FVector FootLockLocationL = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FootLock")
+	FVector FootLockLocationR = FVector::ZeroVector;
+
+	// 서 있는 자세. 발의 Idle 자리(ik_foot 위치)를 여기서 읽는다
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock")
+	TObjectPtr<UAnimSequence> IdleAnim;
+
+	// 고정된 발이 Idle 자리에서 이만큼(cm, 수평) 벗어나 있으면 한 걸음 옮긴다
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.0"))
+	float FootStepThreshold = 15.f;
+
+	// 옮기는 발이 반대쪽 발과 옆으로 이만큼(cm)은 떨어져 있게 한다(다리가 X자로 꼬이지 않게)
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.0"))
+	float FootStepMinGap = 10.f;
+
+	// 옮기는 발을 드는 높이(cm)
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.0"))
+	float FootStepLift = 6.f;
+
+	// 멈추고 나서 이 시간(초)이 지나야 발을 옮긴다(Idle로 섞이는 중에는 옮기지 않는다)
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.0"))
+	float FootStepDelay = 0.3f;
+
+	// 발 하나를 옮기는 시간(초)
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.05"))
+	float FootStepDuration = 0.3f;
+
+	// 움직이기 시작할 때 고정을 푸는 시간(초)
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.01"))
+	float FootUnlockTime = 0.15f;
+
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<AHuntCharacter> Character;
 
 	void UpdateVelocity();
-	void UpdateStartStop(float DeltaSeconds);
-	// Distance 커브가 Distance가 되는 재생 시간. 커브는 시간에 따라 늘어나므로 이분 탐색
-	static float FindTimeAtDistance(const UAnimSequence* Anim, float Distance);
-	// 정지 애니메이션에서 멈추기 전 마지막으로 루트 속도가 Speed 이상이던 재생 시간
-	static float FindStopTimeAtSpeed(const UAnimSequence* Anim, float Speed);
-
-	// 이동 설정의 제동(마찰 + 감속)으로 Speed에서 멈출 때까지 걸리는 시간(초)
-	float EstimateBrakingTime(float Speed) const;
-
-	// 정지 애니메이션에서 멈추는 지점(Distance 커브 0)과, 끝낼 시간(멈추는 지점 + StopSettleTime)
-	float StopPointTime = 0.f;
-	float StopEndTime = 0.f;
-	// 멈추는 지점까지의 재생 속도(캐릭터가 실제로 멈추는 시각에 맞춘 값). 그 뒤 마무리는 1배
-	float StopRate = 1.f;
 	void UpdateFoldedDirections();
 	// 현재 방향의 가장 빠른 이동 애니메이션 속도
 	float GetRunAnimSpeed() const;
@@ -238,8 +223,32 @@ private:
 	void ApplyTurnYawCurve();
 	void TryStartTurn(bool bCanTurn);
 
+	void UpdateFootLock(float DeltaSeconds);
+
+	// 발 하나의 고정 상태. 0 = 왼발, 1 = 오른발
+	struct FFootLock
+	{
+		bool bLocked = false;
+		bool bStepping = false;
+		// 이번에 멈춘 뒤 이미 한 번 옮겼다
+		bool bStepped = false;
+		float Alpha = 0.f;
+		float StepTime = 0.f;
+		FVector LockedWorld = FVector::ZeroVector;
+		FVector StepStartWorld = FVector::ZeroVector;
+		// Idle 자세의 발 자리(컴포넌트 공간, 루트 회전 전)
+		FVector IdleLocation = FVector::ZeroVector;
+	};
+	FFootLock Feet[2];
+	float StandingTime = 0.f;
+	bool bWasMovingForFootLock = false;
+
 	float PrevActorYaw = 0.f;
-	bool bWasAccelerating = false;
+	// 캐릭터 정면 기준 실제 이동 방향(-180~180). Direction은 여기서 몸이 돌아간 만큼(RootYawOffset)을 뺀 값
+	float VelocityDirection = 0.f;
+	// 몸 회전 기준이 뒤쪽이다(VelocityDirection으로 판정, BackwardHysteresis 사용)
+	bool bHipsBackward = false;
+	float HipYawLogTime = 0.f;
 	// 회전 애니메이션의 RemainingTurnYaw(가중치로 나눈 값) 직전 프레임 값
 	float PrevTurnYawCurve = 0.f;
 	bool bTurnCurveActive = false;

@@ -40,10 +40,6 @@ void UHuntAnimInstance::NativeInitializeAnimation()
 			Feet[Side].IdleLocation = ComponentTransform.GetLocation();
 		}
 	}
-	if (Character)
-	{
-		UE_LOG(LogTemp, Log, TEXT("FootLock: %s idle L=%s R=%s"), *GetPathName(), *Feet[0].IdleLocation.ToString(), *Feet[1].IdleLocation.ToString());
-	}
 }
 
 void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -109,8 +105,6 @@ void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
 			Foot.bLocked = true;
 			Foot.bStepped = false;
 			Target = Foot.LockedWorld;
-			UE_LOG(LogTemp, Log, TEXT("FootLock: lock %s grounded=%d offset=%.1f"), Side == 0 ? TEXT("L") : TEXT("R"),
-				bGrounded, FVector::Dist2D(Foot.LockedWorld, IdleWorld[Side]));
 		}
 		else
 		{
@@ -166,7 +160,6 @@ void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
 		Foot.bStepped = true;
 		Foot.StepTime = 0.f;
 		Foot.StepStartWorld = Foot.LockedWorld;
-		UE_LOG(LogTemp, Log, TEXT("FootLock: step %s offset=%.1f crossed=%d"), Side == 0 ? TEXT("L") : TEXT("R"), Offsets[Side], bCrossed);
 	}
 }
 
@@ -205,10 +198,11 @@ void UHuntAnimInstance::UpdateGaitBlend()
 	// 조깅 중이어도 걷기 샘플보다 느리면(벽에 막혀 미끄러질 때, 멈추는 중) 걷기로 바꾼다
 	// 조깅 블렌드스페이스는 조깅 샘플 속도로 고정되어 느리면 큰 보폭을 슬로모션으로 밟는다
 	bRunGait = Character->IsRunGait() && GroundSpeed > WalkAnimSpeed;
-	WalkBlendSpeed = FMath::Min(GroundSpeed, WalkAnimSpeed);
-	WalkPlayRate = FMath::Max(1.f, GroundSpeed / WalkAnimSpeed);
+	// 느릴 때는 재생 속도를 MinPlayRate까지만 내리고, 나머지는 Idle과 섞어(블렌드 속도) 보폭을 줄여 맞춘다
+	WalkPlayRate = FMath::Max(GroundSpeed / WalkAnimSpeed, MinPlayRate);
+	WalkBlendSpeed = FMath::Min(GroundSpeed / WalkPlayRate, WalkAnimSpeed);
 	RunBlendSpeed = FMath::Max(GroundSpeed, JogAnimSpeed);
-	LocomotionPlayRate = GroundSpeed / FMath::Clamp(GroundSpeed, JogAnimSpeed, FMath::Max(JogAnimSpeed, GetRunAnimSpeed()));
+	LocomotionPlayRate = FMath::Max(GroundSpeed / FMath::Clamp(GroundSpeed, JogAnimSpeed, FMath::Max(JogAnimSpeed, GetRunAnimSpeed())), MinPlayRate);
 }
 
 void UHuntAnimInstance::UpdateMovingBackward()
@@ -218,12 +212,14 @@ void UHuntAnimInstance::UpdateMovingBackward()
 		return;
 	}
 
-	const float AbsDirection = FMath::Abs(Direction);
+	// 캐릭터 정면 기준 실제 이동 방향으로 판정한다. 히스테리시스는 뒤쪽(90~90+H)에만 둔다
+	// 양쪽에 두면 정옆 이동 때 직전 상태에 따라 무릎 방향(LF/LB)이 달라진다
+	const float AbsDirection = FMath::Abs(VelocityDirection);
 	if (AbsDirection > 90.f + BackwardHysteresis)
 	{
 		bMovingBackward = true;
 	}
-	else if (AbsDirection < 90.f - BackwardHysteresis)
+	else if (AbsDirection < 91.f)
 	{
 		bMovingBackward = false;
 	}
@@ -238,6 +234,9 @@ void UHuntAnimInstance::UpdateWeapon()
 	// shortcut: 400~550은 ABP Move 상태의 질주 상체 블렌드(MapRangeClamped) 구간을 옮겨 적은 것, ABP를 바꾸면 여기도 맞춘다
 	const float SprintUpperBodyWeight = FMath::GetMappedRangeValueClamped(FVector2D(400.f, 550.f), FVector2D(0.f, 1.f), GroundSpeed);
 	WallBlockAlpha = Character->GetWallBlockAlpha() * (1.f - SprintUpperBodyWeight);
+	RelaxedAlpha = Character->GetRelaxedBlend() * (1.f - SprintUpperBodyWeight);
+	AimOffsetAlpha = 1.f - RelaxedAlpha;
+	LeftHandIKAlpha = bHasWeapon ? 1.f : 0.f;
 	if (bHasWeapon)
 	{
 		const FTransform HandTransform = GetSkelMeshComponent()->GetSocketTransform(TEXT("hand_r"));
@@ -250,6 +249,7 @@ void UHuntAnimInstance::UpdateAimPitch()
 	// 컨트롤러가 있으면 컨트롤 회전(GetBaseAimRotation은 플레이어면 카메라 회전이라 고정 카메라에서 안 변함), 다른 플레이어 캐릭터는 복제된 피치
 	const FRotator AimRotation = Character->GetController() ? Character->GetControlRotation() : Character->GetBaseAimRotation();
 	// 벽에 막혀 총을 내린 만큼 위아래 조준을 뺀다. Yaw는 제자리 회전 보정이라 그대로 둔다
+	// 대기 자세에서는 빼지 않는다: 피치가 상체를 숙여 머리(카메라)를 앞으로 내보내야 아래를 볼 때 카메라가 하체 메시 안쪽 위에 오지 않는다
 	AimPitch = FRotator::NormalizeAxis(AimRotation.Pitch) * (1.f - Character->GetWallBlockAlpha());
 }
 
@@ -264,6 +264,7 @@ void UHuntAnimInstance::UpdateTurnInPlace(float DeltaSeconds)
 
 	TryStartTurn(bCanTurn);
 	AimYaw = -RootYawOffset;
+	LookYawTime = FMath::GetMappedRangeValueClamped(FVector2D(-180.f, 180.f), FVector2D(0.f, 1.f), AimYaw);
 }
 
 void UHuntAnimInstance::UpdateRootYawOffset(float DeltaSeconds, bool bCanTurn)
@@ -279,29 +280,9 @@ void UHuntAnimInstance::UpdateRootYawOffset(float DeltaSeconds, bool bCanTurn)
 	}
 	else
 	{
-		// 이동 중: 몸을 이동 방향 쪽으로 돌린다. 뒤로 갈 때는 바로 뒤를 기준으로(뒷걸음 그대로, 옆으로 기운 만큼만)
-		// 앞뒤 판정은 캐릭터 정면 기준 실제 이동 방향으로 한다. 돌아간 몸 기준(bMovingBackward)으로 하면
-		// 왼쪽 → 오른쪽 전환 때 "뒤로 가는 중"이 되어 몸이 처음 방향에 붙잡힌다
-		const float AbsVelocityDirection = FMath::Abs(VelocityDirection);
-		if (AbsVelocityDirection > 90.f + BackwardHysteresis)
-		{
-			bHipsBackward = true;
-		}
-		else if (AbsVelocityDirection < 90.f - BackwardHysteresis)
-		{
-			bHipsBackward = false;
-		}
-		const float FromFacing = bHipsBackward ? FRotator::NormalizeAxis(VelocityDirection + 180.f) : VelocityDirection;
-		const float Target = bIsFalling || !bShouldMove ? 0.f : FromFacing * MoveHipYawRatio;
-		RootYawOffset = FMath::FInterpTo(RootYawOffset, Target, DeltaSeconds, RootYawBlendOutSpeed);
+		// 이동 중: 몸을 시선 방향으로 되돌린다
+		RootYawOffset = FMath::FInterpTo(RootYawOffset, 0.f, DeltaSeconds, RootYawBlendOutSpeed);
 		TurnDirection = 0;
-		HipYawLogTime += DeltaSeconds;
-		if (bShouldMove && HipYawLogTime > 0.25f)
-		{
-			HipYawLogTime = 0.f;
-			UE_LOG(LogTemp, Log, TEXT("HipYaw: vel=%.0f hipsBack=%d target=%.0f root=%.0f dir=%.0f moveBack=%d speed=%.0f"),
-				VelocityDirection, bHipsBackward, Target, RootYawOffset, Direction, bMovingBackward, GroundSpeed);
-		}
 	}
 }
 

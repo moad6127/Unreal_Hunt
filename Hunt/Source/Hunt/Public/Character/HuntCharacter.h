@@ -12,6 +12,14 @@ class UInputAction;
 class UWeaponDefinition;
 struct FInputActionValue;
 
+// 총 자세. Relaxed = 총 내림(기본), Ready = 허리 사격 자세, Aiming = 조준
+enum class EHuntWeaponStance : uint8
+{
+	Relaxed,
+	Ready,
+	Aiming,
+};
+
 UCLASS()
 class HUNT_API AHuntCharacter : public ACharacter
 {
@@ -36,6 +44,12 @@ public:
 
 	// 벽에 막혀 총을 내린 정도(0 = 평소, 1 = 다 내림). 애님은 내린 자세를 이만큼 섞고, 총은 이만큼 총구 방향으로 쏜다
 	float GetWallBlockAlpha() const { return WallBlockAlpha; }
+
+	// 총을 내린 정도(0~1) = 벽 앞 내림과 대기(Relaxed) 자세 중 큰 값. 내린 자세 애디티브, 크로스헤어, 에임 오프셋, 발사 방향이 쓴다
+	float GetWeaponLowerAlpha() const { return FMath::Max(WallBlockAlpha, RelaxedAlpha); }
+
+	// 대기(Relaxed) 자세 블렌드(0 = 준비, 1 = 대기). 시작·끝이 부드럽게 감속된다. 1인칭 대기 포즈가 쓴다
+	float GetRelaxedBlend() const { return FMath::SmoothStep(0.f, 1.f, RelaxedAlpha); }
 
 	// 발사 반동. Kick만큼 조준선을 RecoilSmoothTime 동안 올리고, 사격을 멈추면 RecoilRecovery 비율만큼 되돌린다
 	void AddRecoil(const FRotator& Kick);
@@ -128,6 +142,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "WallBlock", meta = (ClampMin = "0.0"))
 	float WallBlockSweepRadius = 10.f;
 
+	// 조준을 풀거나 쏜 뒤 준비 자세(총구 앞)를 유지하는 시간(초). 지나면 총을 내린다
+	UPROPERTY(EditDefaultsOnly, Category = "Stance", meta = (ClampMin = "0.0"))
+	float ReadyHoldTime = 2.f;
+
+	// 내린 총을 드는(또는 내리는) 시간(초). 내린 채 쏘면 이만큼 든 뒤 발사한다
+	UPROPERTY(EditDefaultsOnly, Category = "Stance", meta = (ClampMin = "0.01"))
+	float RaiseTime = 0.2f;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> MoveAction;
 
@@ -171,7 +193,7 @@ protected:
 
 	// 옆·뒤로 갈 때 최대 속도 비율(정면 = 1). 이동 애니메이션 실제 속도(옆 약 0.75, 뒤 약 0.6배)에 맞춰 발 미끄러짐을 줄인다
 	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.1", ClampMax = "1.0"))
-	float StrafeSpeedScale = 0.75f;
+	float StrafeSpeedScale = 0.9f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.1", ClampMax = "1.0"))
 	float BackwardSpeedScale = 0.6f;
@@ -249,6 +271,8 @@ private:
 	// 1인칭 팔 (흔들림·킥·조준 정렬)
 	void UpdateWeaponSway(float DeltaSeconds);
 	void UpdateWallBlock(float DeltaSeconds);
+	// 총 자세 전환(준비 유지 시간, 내린 정도, 들고 나서 발사)
+	void UpdateStance(float DeltaSeconds);
 	void UpdateWeaponKick(float DeltaSeconds);
 	void UpdateFirstPersonArms(float AimBlend);
 	FTransform GetSightAlignedArmsTransform(float AimBlend) const;
@@ -274,6 +298,19 @@ private:
 
 	// shortcut: 복제하지 않아 다른 플레이어에게는 총을 내린 자세가 안 보인다, 멀티 점검 때 조준 상태와 함께 복제
 	float WallBlockAlpha = 0.f;
+
+	// shortcut: 총 자세도 복제하지 않는다(다른 플레이어에게는 대기 자세로 보임), 멀티 점검 때 조준 상태와 함께 복제
+	EHuntWeaponStance Stance = EHuntWeaponStance::Relaxed;
+
+	// 대기 자세로 총을 내린 정도(0~1, 선형). RaiseTime 동안 변한다
+	float RelaxedAlpha = 1.f;
+
+	// 준비 자세 남은 시간(초)
+	float ReadyTimeLeft = 0.f;
+
+	// 발사 버튼을 누르고 있는지 / 총을 다 들면 쏠지
+	bool bFireHeld = false;
+	bool bFireAfterRaise = false;
 
 	// 머리를 보간으로 따라가는 카메라 위치(캡슐 기준)
 	FVector HeadCameraLocation = FVector::ZeroVector;

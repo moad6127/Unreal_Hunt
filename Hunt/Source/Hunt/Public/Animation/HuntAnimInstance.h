@@ -63,9 +63,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	float WalkBlendSpeed = 0.f;
 
-	// 걷기 샘플보다 빠르게 움직이면 그만큼 빨리 재생한다 (1 미만으로는 안 내림)
+	// 속도 / 걷기 샘플 속도. MinPlayRate 아래로는 안 내리고 대신 WalkBlendSpeed를 낮춰 Idle과 섞는다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	float WalkPlayRate = 1.f;
+
+	// 걷기·조깅 재생 속도 하한. 너무 느리게 재생하면 슬로모션처럼 보인다
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float MinPlayRate = 0.85f;
 
 	// 조깅용 블렌드스페이스에 넣는 속도. 조깅 샘플 속도 아래로 내리지 않아 걷기 샘플이 섞이지 않게 한다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
@@ -135,11 +139,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
 	float RootYawBlendOutSpeed = 10.f;
 
-	// ALS처럼 옆으로 갈 때 몸(골반)을 이동 방향 쪽으로 이 비율만큼 돌린다. 상체는 에임 오프셋(AimYaw)이 시선으로 되돌린다
-	// 0.5면 정옆 이동 때 45도: 다리는 몸 기준 대각선으로 걸어 꼬이지 않고, 제자리 회전 시작 각도(TurnStartAngle)보다 작아 멈춰도 바로 돌지 않는다
-	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float MoveHipYawRatio = 0.5f;
-
 	// 전신 손의 총(BodyWeapon)이 이 메시에 붙어 있으면 true
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	bool bHasWeapon = false;
@@ -156,6 +155,23 @@ protected:
 	// 질주 상체 자세가 섞인 만큼은 뺀 값이다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float WallBlockAlpha = 0.f;
+
+	// 대기 자세 블렌드(0~1, 질주 상체가 섞인 만큼 뺀 값). ALS 방식: 상체를 ALS 소총 대기 자세(ALS_Props_M4A1_Poses 0프레임)로 바꾸고
+	// 총을 시선에 겨누는 Lyra 에임 오프셋 대신 목·머리 위주의 ALS 시선 애디티브(ALS_N_Look)를 쓴다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float RelaxedAlpha = 0.f;
+
+	// Lyra 에임 오프셋(총을 시선에 겨눔) 가중치 = 1 - RelaxedAlpha
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float AimOffsetAlpha = 1.f;
+
+	// 왼손 IK 가중치(총이 있으면 1). 대기 포즈(A_Hunt_Rifle_Relaxed_Pose)도 왼손 모양을 Lyra 그립과 같게 만들어 두어 IK를 그대로 건다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float LeftHandIKAlpha = 0.f;
+
+	// ALS 시선 스윕의 정규화 시간(0~1) = 몸 기준 시선 Yaw(AimYaw) -180~180. 0.5가 정면 (ALS ForwardYawTime)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float LookYawTime = 0.5f;
 
 	// 왼손 IK 목표 위치: 총의 왼손 소켓을 오른손(hand_r) 뼈 기준으로 나타낸 값. ABP의 Two Bone IK(Bone Space, hand_r)에 넣는다
 	// 총이 오른손에 붙어 있으므로 이 상대값은 프레임 지연 없이 정확하다
@@ -246,9 +262,6 @@ private:
 	float PrevActorYaw = 0.f;
 	// 캐릭터 정면 기준 실제 이동 방향(-180~180). Direction은 여기서 몸이 돌아간 만큼(RootYawOffset)을 뺀 값
 	float VelocityDirection = 0.f;
-	// 몸 회전 기준이 뒤쪽이다(VelocityDirection으로 판정, BackwardHysteresis 사용)
-	bool bHipsBackward = false;
-	float HipYawLogTime = 0.f;
 	// 회전 애니메이션의 RemainingTurnYaw(가중치로 나눈 값) 직전 프레임 값
 	float PrevTurnYawCurve = 0.f;
 	bool bTurnCurveActive = false;

@@ -27,7 +27,9 @@ void UHuntFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	// 공중에서는 발을 딛지 않으므로 걷기·달리기 흔들림을 멈춘다
 	bShouldMove = GroundSpeed > 3.f && !Character->GetCharacterMovement()->IsFalling();
 	AimAlpha = Character->GetAimBlend();
+	// 1인칭은 대기 자세를 전용 포즈(RelaxedAlpha)로 하고, 내린 자세 애디티브는 벽 앞에서만 쓴다(대기에 쓰면 팔이 화면 밖으로 나간다)
 	WallBlockAlpha = Character->GetWallBlockAlpha();
+	RelaxedAlpha = Character->GetRelaxedBlend();
 
 	UpdateLeftHandIK();
 }

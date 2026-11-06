@@ -135,7 +135,7 @@ FVector AHuntWeapon::GetAimDirection(const APawn* OwnerPawn, const FVector& Muzz
 	// 벽에 막혀 총을 내린 만큼 크로스헤어 대신 총구가 향한 방향으로 쏜다
 	// shortcut: 총열이 총 메시의 +Y라고 가정(AR4), 축이 다른 총이 생기면 총구 소켓 방향으로 바꾼다
 	const AHuntCharacter* Character = Cast<AHuntCharacter>(OwnerPawn);
-	const float WallBlockAlpha = Character ? Character->GetWallBlockAlpha() : 0.f;
+	const float WallBlockAlpha = Character ? Character->GetWeaponLowerAlpha() : 0.f;
 	return FMath::Lerp(AimDirection, Mesh->GetRightVector(), WallBlockAlpha).GetSafeNormal();
 }
 

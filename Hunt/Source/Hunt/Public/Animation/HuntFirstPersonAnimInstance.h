@@ -38,6 +38,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float WallBlockAlpha = 0.f;
 
+	// 대기 자세 블렌드(0~1). 기본 그립 포즈 ↔ 대기 포즈(A_FP_Rifle_Relaxed_Pose_Grip) 블렌드 가중치
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float RelaxedAlpha = 0.f;
+
 	// 총이 이 팔에 붙어 있고 1인칭 왼손 소켓이 있으면 true. 왼손 IK의 Alpha로 쓴다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	bool bLeftHandIK = false;

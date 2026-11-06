@@ -199,6 +199,32 @@ void AHuntCharacter::UpdateWallBlock(float DeltaSeconds)
 	WallBlockAlpha = FMath::FInterpTo(WallBlockAlpha, Target, DeltaSeconds, WallBlockInterpSpeed);
 }
 
+void AHuntCharacter::UpdateStance(float DeltaSeconds)
+{
+	// 준비 자세: 쏘는 동안은 유지, 손을 떼고 ReadyHoldTime이 지나면 총을 내린다
+	if (Stance == EHuntWeaponStance::Ready)
+	{
+		ReadyTimeLeft = bFireHeld ? ReadyHoldTime : ReadyTimeLeft - DeltaSeconds;
+		if (ReadyTimeLeft <= 0.f)
+		{
+			Stance = EHuntWeaponStance::Relaxed;
+			bFireAfterRaise = false;
+		}
+	}
+	RelaxedAlpha = FMath::FInterpConstantTo(RelaxedAlpha, Stance == EHuntWeaponStance::Relaxed ? 1.f : 0.f, DeltaSeconds, 1.f / RaiseTime);
+
+	// 내린 채 누른 발사: 다 들고 나서 쏜다. 그사이 버튼을 뗐으면(짧게 클릭) 한 발만
+	if (bFireAfterRaise && RelaxedAlpha <= 0.f && EquippedWeapon)
+	{
+		bFireAfterRaise = false;
+		EquippedWeapon->StartFire();
+		if (!bFireHeld)
+		{
+			EquippedWeapon->StopFire();
+		}
+	}
+}
+
 void AHuntCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -215,6 +241,7 @@ void AHuntCharacter::Tick(float DeltaSeconds)
 	UpdateAimAlpha(DeltaSeconds);
 	AirSpreadAlpha = FMath::FInterpTo(AirSpreadAlpha, GetCharacterMovement()->IsFalling() ? 1.f : 0.f, DeltaSeconds, AirSpreadInterpSpeed);
 	UpdateWallBlock(DeltaSeconds);
+	UpdateStance(DeltaSeconds);
 	ApplyRecoil(DeltaSeconds);
 
 	const float AimBlend = GetAimBlend();
@@ -286,7 +313,16 @@ void AHuntCharacter::UpdateHeadCameraLocation(float DeltaSeconds)
 	// 목표 = 머리 뼈 위치 + 시선 방향으로 얼굴 앞까지 (캡슐 기준 좌표로 변환)
 	const FTransform& CapsuleTransform = GetCapsuleComponent()->GetComponentTransform();
 	const FVector AimDirection = GetControlRotation().Vector();
-	const FVector HeadWorld = GetMesh()->GetSocketLocation(CameraHeadBone) + AimDirection * CameraForwardOffset;
+	FVector HeadWorld = GetMesh()->GetSocketLocation(CameraHeadBone) + AimDirection * CameraForwardOffset;
+
+	// 내려다볼수록 카메라를 골반보다 수평으로 최소 40cm(똑바로 아래, 각도에 비례)만큼 앞에 둔다. 상체가 덜 숙여지는 자세(대기 = ALS 시선 애디티브)에서도
+	// 카메라가 하체 메시 바로 위에 와서 허벅지 잘린 면이 보이지 않게 (40은 PIE에서 맞춘 값)
+	constexpr float MinLeadOverPelvis = 40.f;
+	const FVector YawForward = FRotator(0.f, GetControlRotation().Yaw, 0.f).Vector();
+	const float DownAlpha = FMath::Clamp(-FRotator::NormalizeAxis(GetControlRotation().Pitch) / 90.f, 0.f, 1.f);
+	const float Lead = FVector::DotProduct(HeadWorld - GetMesh()->GetSocketLocation(TEXT("pelvis")), YawForward);
+	HeadWorld += YawForward * FMath::Max(0.f, MinLeadOverPelvis * DownAlpha - Lead);
+
 	const FVector Target = CapsuleTransform.InverseTransformPosition(HeadWorld);
 
 	// 보간으로 걷기·달리기의 머리 흔들림을 줄인다 (0이면 즉시 따라감)
@@ -482,14 +518,28 @@ void AHuntCharacter::StopSprint()
 
 void AHuntCharacter::StartFire()
 {
-	if (EquippedWeapon)
+	bFireHeld = true;
+	if (!EquippedWeapon)
 	{
-		EquippedWeapon->StartFire();
+		return;
 	}
+	if (Stance == EHuntWeaponStance::Relaxed)
+	{
+		Stance = EHuntWeaponStance::Ready;
+		ReadyTimeLeft = ReadyHoldTime;
+	}
+	// 총이 아직 내려가 있으면 다 든 뒤 UpdateStance에서 쏜다
+	if (RelaxedAlpha > 0.f)
+	{
+		bFireAfterRaise = true;
+		return;
+	}
+	EquippedWeapon->StartFire();
 }
 
 void AHuntCharacter::StopFire()
 {
+	bFireHeld = false;
 	if (EquippedWeapon)
 	{
 		EquippedWeapon->StopFire();
@@ -499,9 +549,12 @@ void AHuntCharacter::StopFire()
 void AHuntCharacter::StartAim()
 {
 	bWantsToAim = true;
+	Stance = EHuntWeaponStance::Aiming;
 }
 
 void AHuntCharacter::StopAim()
 {
 	bWantsToAim = false;
+	Stance = EHuntWeaponStance::Ready;
+	ReadyTimeLeft = ReadyHoldTime;
 }

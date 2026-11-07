@@ -7,11 +7,16 @@
 #include "Weapon/HuntWeapon.h"
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/Engine.h"
+#include "HAL/IConsoleManager.h"
 
 namespace
 {
 	const FName FootBones[2] = {TEXT("foot_l"), TEXT("foot_r")};
 	const FName IKFootBones[2] = {TEXT("ik_foot_l"), TEXT("ik_foot_r")};
+
+	// shortcut: 이동 판정 진단용 화면 표시(콘솔 hunt.LocoDebug 1), 하체 방향 문제가 정리되면 지운다
+	TAutoConsoleVariable<int32> CVarLocoDebug(TEXT("hunt.LocoDebug"), 0, TEXT("1 = 3인칭 이동 판정 값을 화면에 표시"));
 }
 
 void UHuntAnimInstance::NativeInitializeAnimation()
@@ -25,20 +30,31 @@ void UHuntAnimInstance::NativeInitializeAnimation()
 	}
 
 	// Idle 자세의 발 자리 = ik_foot 뼈의 컴포넌트 공간 위치(애니메이션마다 발 위치로 구워 둠). 뼈를 부모까지 거슬러 합친다
-	if (IdleAnim && IdleAnim->GetSkeleton())
+	const auto ReadIdleFeet = [](const UAnimSequence* Anim, FVector (&OutLocations)[2])
 	{
-		const FReferenceSkeleton& RefSkeleton = IdleAnim->GetSkeleton()->GetReferenceSkeleton();
+		if (!Anim || !Anim->GetSkeleton())
+		{
+			return false;
+		}
+		const FReferenceSkeleton& RefSkeleton = Anim->GetSkeleton()->GetReferenceSkeleton();
 		for (int32 Side = 0; Side < 2; ++Side)
 		{
 			FTransform ComponentTransform = FTransform::Identity;
 			for (int32 Bone = RefSkeleton.FindBoneIndex(IKFootBones[Side]); Bone != INDEX_NONE; Bone = RefSkeleton.GetParentIndex(Bone))
 			{
 				FTransform Local;
-				IdleAnim->GetBoneTransform(Local, FSkeletonPoseBoneIndex(Bone), FAnimExtractContext(0.0), false);
+				Anim->GetBoneTransform(Local, FSkeletonPoseBoneIndex(Bone), FAnimExtractContext(0.0), false);
 				ComponentTransform = ComponentTransform * Local;
 			}
-			Feet[Side].IdleLocation = ComponentTransform.GetLocation();
+			OutLocations[Side] = ComponentTransform.GetLocation();
 		}
+		return true;
+	};
+	ReadIdleFeet(IdleAnim, AimIdleFeet);
+	if (!ReadIdleFeet(RelaxedIdleAnim, RelaxedIdleFeet))
+	{
+		RelaxedIdleFeet[0] = AimIdleFeet[0];
+		RelaxedIdleFeet[1] = AimIdleFeet[1];
 	}
 }
 
@@ -52,10 +68,17 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		return;
 	}
 
-	UpdateVelocity();
-	UpdateFoldedDirections();
+	UpdateVelocity(DeltaSeconds);
+	UpdateFoldedDirections(DeltaSeconds);
 	UpdateGaitBlend();
-	UpdateMovingBackward();
+	UpdateMovingBackward(DeltaSeconds);
+	if (CVarLocoDebug.GetValueOnGameThread() > 0 && GEngine && Character->IsLocallyControlled())
+	{
+		GEngine->AddOnScreenDebugMessage(int32(GetUniqueID()), 0.f, FColor::Yellow, FString::Printf(
+			TEXT("VelDir %.0f  Dir %.0f  Backward %d  Target %d  Fwd %.0f  Bwd %.0f  FeetSideGap %.0f  Speed %.0f | Turn %d  TurnTime %.2f  RootYaw %.0f  TurnW %.2f  Recover %d"),
+			VelocityDirection, Direction, bMovingBackward, bHipsBackwardTarget, ForwardDirection, BackwardDirection,
+			GetFeetSideGap(), GroundSpeed, TurnDirection, TurnTime, RootYawOffset, GetCurveValue(TEXT("TurnYawWeight")), bTurnRecovering));
+	}
 	UpdateWeapon();
 	UpdateAimPitch();
 	UpdateTurnInPlace(DeltaSeconds);
@@ -64,12 +87,26 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
 {
-	// 제자리 회전 중에는 회전 애니메이션이 발을 옮기므로 고정하지 않는다
-	const bool bStanding = !bShouldMove && !bIsFalling && TurnDirection == 0;
-	// 이동하다 멈췄을 때만 고정한다. 시작 직후(첫 프레임은 기본 포즈)나 제자리 회전 뒤에는 애니메이션 그대로
+	// 서 있는 자세: 대기가 아니면(준비·조준) Lyra 사격 자세(왼발 앞), 대기면 ALS 기본자세(두 발 나란히)
+	// ABP Idle 하체는 전환 애니메이션(LegTransitionAnim)을 ShootingLegsTime으로 평가한다. 발 옮기기도 애니메이션에 들어 있다
+	ShootingLegsAlpha = FMath::FInterpConstantTo(ShootingLegsAlpha, Character->GetRelaxedBlend() < 0.5f ? 1.f : 0.f, DeltaSeconds, 1.f / LegStanceBlendTime);
+	ShootingLegsTime = LegTransitionAnim ? ShootingLegsAlpha * LegTransitionAnim->GetPlayLength() : 0.f;
+	const bool bAimLegs = ShootingLegsAlpha >= 0.5f;
+	const bool bLegTransition = ShootingLegsAlpha > 0.f && ShootingLegsAlpha < 1.f;
+
+	// 제자리 회전 중이나 하체 전환 중에는 애니메이션이 발을 옮기므로 고정하지 않는다
+	const bool bStanding = !bShouldMove && !bIsFalling && TurnDirection == 0 && !bLegTransition;
+	// 이동하다 멈췄을 때만 고정한다. 시작 직후(첫 프레임은 기본 포즈)나 하체 전환 뒤에는 애니메이션 그대로
 	const bool bJustStopped = bStanding && bWasMovingForFootLock;
 	bWasMovingForFootLock = bShouldMove;
 	StandingTime = bStanding ? StandingTime + DeltaSeconds : 0.f;
+
+	// 제자리 회전 뒤 발 정리는 회전 애니메이션의 마무리 구간(TurnRecoveryTime)이 한다. 회전 애니메이션은 대기면 ALS(두 발 나란히),
+	// 준비·조준이면 Lyra(사격 자세)로 서 있는 자세와 같은 자세로 끝나서 코드로 발을 옮기지 않는다
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		Feet[Side].IdleLocation = bAimLegs ? AimIdleFeet[Side] : RelaxedIdleFeet[Side];
+	}
 
 	const USkeletalMeshComponent* Mesh = GetOwningComponent();
 	const FTransform& MeshTransform = Mesh->GetComponentTransform();
@@ -95,15 +132,24 @@ void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
 		}
 		else if (!Foot.bLocked)
 		{
-			// 멈춘 순간: 지금 발 자리(지난 프레임 최종 포즈)의 바닥 높이에 고정한다
-			// 디딘 발은 바로, 들려 있던 발은 내려놓으며 천천히 고정한다
-			FVector FootLocal = MeshTransform.InverseTransformPosition(Mesh->GetBoneLocation(FootBones[Side]));
+			// 멈춘 순간 (ALS (N) Stop States 방식): 디딘 발은 지금 자리(지난 프레임 최종 포즈)의 바닥 높이에 고정한다
+			// 들려 있던 발(걸음 중, 교차해 지나가는 중일 수 있음)은 그 자리에 고정하지 않고 바로 서 있는 자세의 자리로 내딛는다
+			// (ALS는 들린 발을 걷기 주기에서 그 발이 디딘 프레임 자세로 바꿔 심는다. 교차한 채 멈춰 서지 않게)
+			const FVector FootWorld = Mesh->GetBoneLocation(FootBones[Side]);
+			FVector FootLocal = MeshTransform.InverseTransformPosition(FootWorld);
 			const bool bGrounded = FootLocal.Z - Foot.IdleLocation.Z < FootStepLift;
 			FootLocal.Z = Foot.IdleLocation.Z;
 			Foot.LockedWorld = MeshTransform.TransformPosition(FootLocal);
-			Foot.Alpha = bGrounded ? 1.f : 0.f;
+			Foot.Alpha = 1.f;
 			Foot.bLocked = true;
 			Foot.bStepped = false;
+			if (!bGrounded)
+			{
+				Foot.bStepping = true;
+				Foot.bStepped = true;
+				Foot.StepTime = 0.f;
+				Foot.StepStartWorld = FootWorld;
+			}
 			Target = Foot.LockedWorld;
 		}
 		else
@@ -141,12 +187,13 @@ void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
 
 	// 서고 나서 고정된 발이 Idle 자리에서 많이 벗어나 있으면 더 벗어난 발부터 한 걸음씩 옮긴다(멈출 때마다 발마다 한 번)
 	// 두 발이 꼬여 있으면(왼발이 오른발보다 오른쪽) 거리와 상관없이 옮긴다
-	if (!bStanding || StandingTime < FootStepDelay || Feet[0].bStepping || Feet[1].bStepping)
+	// 두 발이 교차한 채 디뎌 있으면 기다리지 않고 바로 옮긴다
+	const bool bCrossed = Feet[0].bLocked && Feet[1].bLocked
+		&& BodyX(Feet[0].LockedWorld) - BodyX(Feet[1].LockedWorld) < FootStepMinGap;
+	if (!bStanding || (StandingTime < FootStepDelay && !bCrossed) || Feet[0].bStepping || Feet[1].bStepping)
 	{
 		return;
 	}
-	const bool bCrossed = Feet[0].bLocked && Feet[1].bLocked
-		&& BodyX(Feet[0].LockedWorld) - BodyX(Feet[1].LockedWorld) < FootStepMinGap;
 	float Offsets[2];
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
@@ -163,7 +210,7 @@ void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
 	}
 }
 
-void UHuntAnimInstance::UpdateVelocity()
+void UHuntAnimInstance::UpdateVelocity(float DeltaSeconds)
 {
 	const FVector Velocity = Character->GetVelocity();
 	GroundSpeed = Velocity.Size2D();
@@ -175,13 +222,25 @@ void UHuntAnimInstance::UpdateVelocity()
 	bIsFalling = Character->GetCharacterMovement()->IsFalling();
 }
 
-void UHuntAnimInstance::UpdateFoldedDirections()
+void UHuntAnimInstance::UpdateFoldedDirections(float DeltaSeconds)
 {
 	// 반대 반구의 방향은 앞뒤로 뒤집어 접는다(예: -120 → 앞쪽 -60). 두 값 모두 끊김 없이 이어진다
 	const float AbsDirection = FMath::Abs(Direction);
 	const float MirroredDirection = (Direction < 0.f ? -1.f : 1.f) * (180.f - AbsDirection);
-	ForwardDirection = AbsDirection <= 90.f ? Direction : MirroredDirection;
-	BackwardDirection = AbsDirection >= 90.f ? Direction : MirroredDirection;
+	const float TargetForward = AbsDirection <= 90.f ? Direction : MirroredDirection;
+	// 뒤 블렌드스페이스 방향은 정뒤(180)를 0으로 둔 값(-90~90)으로 바꿔 보간한다
+	const float Backward = AbsDirection >= 90.f ? Direction : MirroredDirection;
+	const float TargetBackwardOffset = (Backward < 0.f ? -1.f : 1.f) * (180.f - FMath::Abs(Backward));
+
+	// ALS InterpVelocityBlend처럼 블렌드스페이스 방향은 바로 넣지 않고 DirectionInterpSpeed로 따라가게 한다
+	// 각도가 아니라 반구마다 접은 값(-90~90)을 선형으로 보간한다: 좌우를 뒤집으면(180° 차이) 앞 블렌드스페이스는 정면(LF→F→RF),
+	// 뒤 블렌드스페이스는 정뒤(LB→B→RB)를 지나 이어진다. 각도로 보간하면 앞/뒤 어느 쪽으로 돌지 매번 달라져 골반 상태와 어긋났다
+	// 서 있다가 출발할 때는 바로 맞춘다(지난번 멈춘 방향에서 보간하지 않게)
+	const float Step = DirectionInterpSpeed > 0.f && bWasMovingForDirection ? FMath::Min(1.f, DeltaSeconds * DirectionInterpSpeed) : 1.f;
+	bWasMovingForDirection = bShouldMove;
+	ForwardDirection += (TargetForward - ForwardDirection) * Step;
+	BackwardDirectionOffset += (TargetBackwardOffset - BackwardDirectionOffset) * Step;
+	BackwardDirection = (BackwardDirectionOffset < 0.f ? -1.f : 1.f) * (180.f - FMath::Abs(BackwardDirectionOffset));
 }
 
 float UHuntAnimInstance::GetRunAnimSpeed() const
@@ -205,23 +264,57 @@ void UHuntAnimInstance::UpdateGaitBlend()
 	LocomotionPlayRate = FMath::Max(GroundSpeed / FMath::Clamp(GroundSpeed, JogAnimSpeed, FMath::Max(JogAnimSpeed, GetRunAnimSpeed())), MinPlayRate);
 }
 
-void UHuntAnimInstance::UpdateMovingBackward()
+float UHuntAnimInstance::GetFeetSideGap() const
+{
+	// 캐릭터 기준 옆 방향으로 왼발이 오른발보다 얼마나 왼쪽에 있는지(cm). 음수면 다리가 교차했다
+	// 메시 컴포넌트 공간 +X = 캐릭터 왼쪽. 지난 프레임 최종 포즈 기준
+	const USkeletalMeshComponent* Mesh = GetOwningComponent();
+	const FTransform& MeshTransform = Mesh->GetComponentTransform();
+	return MeshTransform.InverseTransformPosition(Mesh->GetBoneLocation(FootBones[0])).X
+		- MeshTransform.InverseTransformPosition(Mesh->GetBoneLocation(FootBones[1])).X;
+}
+
+void UHuntAnimInstance::UpdateMovingBackward(float DeltaSeconds)
 {
 	if (!bShouldMove)
 	{
+		HipsSwitchWaitTime = 0.f;
 		return;
 	}
 
-	// 캐릭터 정면 기준 실제 이동 방향으로 판정한다. 히스테리시스는 뒤쪽(90~90+H)에만 둔다
-	// 양쪽에 두면 정옆 이동 때 직전 상태에 따라 무릎 방향(LF/LB)이 달라진다
+	// ALS 방식(Directional States): 캐릭터 정면 기준 이동 방향을 앞·옆·뒤 구역으로 나눈다
+	// 앞 구역이면 앞걸음, 뒤 구역이면 뒷걸음. 옆 구역에 들어오면 일단 지금 골반 방향을 유지하고(뒤에서 왔으면 LB/RB),
+	// 좌우를 바로 뒤집을 때는 골반 상태를 그대로 두고 블렌드스페이스 방향 보간(UpdateFoldedDirections)이 정면/정뒤를 지나 이어지게 한다
+	// 뒷걸음 골반으로 옆걸음하는 건 잠깐뿐: 전환 블렌드가 끝나면(HipsSettleTime) 앞을 보는 옆걸음(LF/RF)으로 돌아간다(ALS LB→LF, RB→RF)
+	TimeSinceHipsSwitch += DeltaSeconds;
 	const float AbsDirection = FMath::Abs(VelocityDirection);
-	if (AbsDirection > 90.f + BackwardHysteresis)
+	if (AbsDirection < 90.f - SideQuadrantHalfWidth)
 	{
-		bMovingBackward = true;
+		bHipsBackwardTarget = false;
 	}
-	else if (AbsDirection < 91.f)
+	else if (AbsDirection > 90.f + SideQuadrantHalfWidth)
 	{
-		bMovingBackward = false;
+		bHipsBackwardTarget = true;
+	}
+	else if (bMovingBackward && bHipsBackwardTarget && TimeSinceHipsSwitch >= HipsSettleTime)
+	{
+		bHipsBackwardTarget = false;
+	}
+
+	// 골반 방향은 두 발이 옆으로 벌어져 있을 때(왼발이 오른발보다 HipsSwitchFeetApart 이상 왼쪽, 즉 다리가 교차하지 않을 때)만 바꾼다
+	// ALS의 Feet_Crossing == 0과 같은 조건. 커브는 Hunt ABP에서 Move 상태 애디티브(Alpha 0.4→0)를 거쳐 줄어들어 쓸 수 없어 발 위치로 잰다
+	// 앞뒤 간격은 보지 않는다: 옆걸음에서 다리를 교차해 내딛는 순간에도 두 발은 앞뒤로 멀리 떨어져 있다
+	if (bHipsBackwardTarget == bMovingBackward)
+	{
+		HipsSwitchWaitTime = 0.f;
+		return;
+	}
+	HipsSwitchWaitTime += DeltaSeconds;
+	if (GetFeetSideGap() >= HipsSwitchFeetApart || HipsSwitchWaitTime >= MaxHipsSwitchDelay)
+	{
+		bMovingBackward = bHipsBackwardTarget;
+		HipsSwitchWaitTime = 0.f;
+		TimeSinceHipsSwitch = 0.f;
 	}
 }
 
@@ -258,7 +351,24 @@ void UHuntAnimInstance::UpdateTurnInPlace(float DeltaSeconds)
 	const bool bCanTurn = !bShouldMove && !bIsFalling;
 	UpdateRootYawOffset(DeltaSeconds, bCanTurn);
 	AdvanceTurnTimers(DeltaSeconds);
+	RelaxedTurnTime = TurnTime * RelaxedTurnPlayRate;
 	ApplyTurnYawCurve();
+
+	// 회전 마무리: 끝나거나, 그사이 몸과 시선이 다시 벌어지면(새 회전 필요) Idle로 돌아간다
+	// shortcut: 커브가 끝내 안 들어오는 등 회전이 끝나지 않는 경우를 대비해 MaxTurnDuration이 지나면 강제로 끝낸다, 원인을 찾으면 지운다
+	constexpr float MaxTurnDuration = 3.f;
+	if (bTurnRecovering)
+	{
+		TurnRecoveryLeft -= DeltaSeconds;
+		if (TurnRecoveryLeft <= 0.f || FMath::Abs(RootYawOffset) > TurnStartAngle)
+		{
+			EndTurn();
+		}
+	}
+	else if (TurnDirection != 0 && TurnTime > MaxTurnDuration)
+	{
+		EndTurn();
+	}
 
 	RootYawOffset = FMath::Clamp(RootYawOffset, -MaxRootYawOffset, MaxRootYawOffset);
 
@@ -283,6 +393,7 @@ void UHuntAnimInstance::UpdateRootYawOffset(float DeltaSeconds, bool bCanTurn)
 		// 이동 중: 몸을 시선 방향으로 되돌린다
 		RootYawOffset = FMath::FInterpTo(RootYawOffset, 0.f, DeltaSeconds, RootYawBlendOutSpeed);
 		TurnDirection = 0;
+		bTurnRecovering = false;
 	}
 }
 
@@ -315,11 +426,19 @@ void UHuntAnimInstance::ApplyTurnYawCurve()
 	}
 	else if (bTurnCurveActive)
 	{
-		// 회전 구간이 끝났다 (TurnYawWeight가 0으로 떨어짐)
+		// 회전 구간이 끝났다 (TurnYawWeight가 0으로 떨어짐). 바로 Idle로 돌아가지 않고 TurnRecoveryTime 동안
+		// 회전 애니메이션의 마무리(발 내려놓기)를 더 재생한다 (Lyra Turn Recovery)
 		bTurnCurveActive = false;
-		TurnDirection = 0;
-		TurnCooldown = TurnRetriggerDelay;
+		bTurnRecovering = true;
+		TurnRecoveryLeft = TurnRecoveryTime;
 	}
+}
+
+void UHuntAnimInstance::EndTurn()
+{
+	TurnDirection = 0;
+	bTurnRecovering = false;
+	TurnCooldown = TurnRetriggerDelay;
 }
 
 void UHuntAnimInstance::TryStartTurn(bool bCanTurn)

@@ -50,9 +50,29 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	float BackwardDirection = 180.f;
 
-	// ±90도 근처에서 앞/뒤가 오락가락하지 않도록 이만큼 넘어가야 바뀐다(도)
+	// 블렌드스페이스에 넣는 방향(Direction)이 실제 이동 방향을 따라가는 속도(ALS VelocityBlendInterpSpeed = 12). 0이면 바로
+	// 높이면 반응이 빨라지고, 낮추면 방향을 바꿀 때 다리가 부드럽지만 바꾼 직후 발이 잠깐 미끄러진다
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0"))
+	float DirectionInterpSpeed = 12.f;
+
+	// 옆 구역의 반폭(도): 90±이 값 안에서는 골반 방향(앞/뒤 블렌드스페이스)을 바꾸지 않는다(ALS 방식)
+	// 넓히면 방향을 자주 바꿔도 골반이 덜 돌지만, 블렌드스페이스가 반대 반구를 접어 읽는 만큼(최대 2배) 발이 앞뒤로 미끄러진다
 	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0", ClampMax = "45.0"))
-	float BackwardHysteresis = 10.f;
+	float SideQuadrantHalfWidth = 10.f;
+
+	// 골반 방향을 바꿀 때 왼발이 오른발보다 캐릭터 기준 옆으로 이만큼(cm) 이상 왼쪽에 있는 순간을 기다린다(다리가 교차해 있는 동안에는 안 바꾼다)
+	// 서 있을 때 두 발 옆 간격은 약 36cm, 옆걸음에서 다리를 교차하면 음수가 된다
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0"))
+	float HipsSwitchFeetApart = 15.f;
+
+	// 위 순간을 기다리는 최대 시간(초). 걷기 한 주기(약 1.1초) 안에는 보통 그런 순간이 온다
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0"))
+	float MaxHipsSwitchDelay = 1.f;
+
+	// 뒤에서 옆으로 왔거나 좌우를 바로 바꿔 뒷걸음 골반(LB/RB)으로 옆걸음할 때, 이만큼(초) 지나면 앞을 보는 옆걸음(LF/RF)으로 돌아간다
+	// ABP 앞↔뒤 전환 블렌드(0.5초)가 끝난 뒤가 되도록 맞춘다(ALS는 상태 가중치가 1이 된 뒤)
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0"))
+	float HipsSettleTime = 0.5f;
 
 	// 걸음 상태(false = 걷기, true = 조깅·질주). ABP는 걷기용·조깅용 블렌드스페이스를 섞지 않고 이 값으로 바꿔 끼운다(관성 블렌딩)
 	// 걷기와 조깅을 한 블렌드스페이스 안에서 섞으면 중간 자세에서 다리가 모여 보이기 때문
@@ -118,6 +138,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TurnInPlace")
 	float TurnTime = 0.f;
 
+	// 대기 자세 회전(ALS_N_TurnIP_L90/R90) 재생 시간 = TurnTime × RelaxedTurnPlayRate. ABP ALS 회전 Sequence Evaluator(Explicit Time)에 넣는다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TurnInPlace")
+	float RelaxedTurnTime = 0.f;
+
+	// ALS 회전은 다 도는 데 1.17초로 Lyra(0.63초)보다 느려, 계속 돌아볼 때 회전이 끝나기 전에 몸이 시선에 끌려간다. 이 배율로 빨리 재생한다
+	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.1"))
+	float RelaxedTurnPlayRate = 1.6f;
+
 	// 몸과 시선 차이가 이 각도를 넘으면 회전 애니메이션을 시작한다
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
 	float TurnStartAngle = 50.f;
@@ -134,6 +162,11 @@ protected:
 	// 회전이 끝난 뒤 다음 회전까지 쉬는 시간. ABP 회전 블렌드 시간(0.2초) 이상이어야 이전 회전이 다 빠진 뒤 새로 시작해 튀지 않는다
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
 	float TurnRetriggerDelay = 0.2f;
+
+	// 회전량 커브가 끝난 뒤(TurnYawWeight = 0) 회전 애니메이션을 이만큼(초) 더 재생해 발을 내려놓는 마무리까지 보여 준다(Lyra Turn Recovery)
+	// 그사이 몸과 시선이 다시 TurnStartAngle 이상 벌어지면 바로 끝내고 새로 돈다
+	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
+	float TurnRecoveryTime = 0.5f;
 
 	// 움직이는 동안 몸이 목표 방향(시선 또는 아래 이동 방향 쪽)으로 돌아가는 속도
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
@@ -192,9 +225,30 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FootLock")
 	FVector FootLockLocationR = FVector::ZeroVector;
 
-	// 서 있는 자세. 발의 Idle 자리(ik_foot 위치)를 여기서 읽는다
+	// 조준 중 서 있는 자세(Lyra 사격 Idle, 왼발 앞). 발의 Idle 자리(ik_foot 위치)를 여기서 읽는다
 	UPROPERTY(EditDefaultsOnly, Category = "FootLock")
 	TObjectPtr<UAnimSequence> IdleAnim;
+
+	// 대기·준비 중 서 있는 자세(ALS 기본자세, 두 발 나란히). ABP Idle 하체와 같은 애니메이션. 비우면 IdleAnim 자리를 쓴다
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock")
+	TObjectPtr<UAnimSequence> RelaxedIdleAnim;
+
+	// 서 있는 하체 진행도(0 = ALS 기본자세 두 발 나란히, 1 = Lyra 사격 자세). 대기가 아니면(준비·조준) 1로 LegStanceBlendTime 동안 일정하게 변한다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FootLock")
+	float ShootingLegsAlpha = 0.f;
+
+	// 하체 전환 애니메이션을 평가할 시간 = ShootingLegsAlpha × 길이. ABP Idle 하체의 Sequence Evaluator(Explicit Time)에 넣는다
+	// 조준하면 앞으로, 대기로 돌아가면 거꾸로 재생되는 셈
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FootLock")
+	float ShootingLegsTime = 0.f;
+
+	// 서 있는 하체 전환 애니메이션(ALS 기본자세 → Lyra 사격 자세, 골반·다리와 발 옮기기 포함). ABP가 평가하는 것과 같은 애니메이션
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock")
+	TObjectPtr<UAnimSequence> LegTransitionAnim;
+
+	// 서 있는 하체가 두 자세 사이를 바꾸는 시간(초) = 전환 애니메이션 재생 시간
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.01"))
+	float LegStanceBlendTime = 0.3f;
 
 	// 고정된 발이 Idle 자리에서 이만큼(cm, 수평) 벗어나 있으면 한 걸음 옮긴다
 	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.0"))
@@ -224,12 +278,14 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AHuntCharacter> Character;
 
-	void UpdateVelocity();
-	void UpdateFoldedDirections();
+	void UpdateVelocity(float DeltaSeconds);
+	void UpdateFoldedDirections(float DeltaSeconds);
 	// 현재 방향의 가장 빠른 이동 애니메이션 속도
 	float GetRunAnimSpeed() const;
 	void UpdateGaitBlend();
-	void UpdateMovingBackward();
+	void UpdateMovingBackward(float DeltaSeconds);
+	// 캐릭터 기준 옆으로 왼발이 오른발보다 왼쪽에 있는 거리(cm). 음수면 다리가 교차했다
+	float GetFeetSideGap() const;
 	void UpdateWeapon();
 	void UpdateAimPitch();
 
@@ -238,6 +294,7 @@ private:
 	void AdvanceTurnTimers(float DeltaSeconds);
 	void ApplyTurnYawCurve();
 	void TryStartTurn(bool bCanTurn);
+	void EndTurn();
 
 	void UpdateFootLock(float DeltaSeconds);
 
@@ -252,18 +309,31 @@ private:
 		float StepTime = 0.f;
 		FVector LockedWorld = FVector::ZeroVector;
 		FVector StepStartWorld = FVector::ZeroVector;
-		// Idle 자세의 발 자리(컴포넌트 공간, 루트 회전 전)
+		// 지금 서 있는 자세의 발 자리(컴포넌트 공간, 루트 회전 전). 조준 여부에 따라 아래 둘 중 하나
 		FVector IdleLocation = FVector::ZeroVector;
 	};
 	FFootLock Feet[2];
+	FVector AimIdleFeet[2] = {FVector::ZeroVector, FVector::ZeroVector};
+	FVector RelaxedIdleFeet[2] = {FVector::ZeroVector, FVector::ZeroVector};
 	float StandingTime = 0.f;
 	bool bWasMovingForFootLock = false;
 
 	float PrevActorYaw = 0.f;
+	// 골반 방향 전환을 기다린 시간
+	float HipsSwitchWaitTime = 0.f;
+	// 뒤 블렌드스페이스 방향을 정뒤 = 0으로 둔 보간 값(-90~90) / 지난 프레임 움직이고 있었는지(출발할 때 보간 없이 맞추려고)
+	float BackwardDirectionOffset = 0.f;
+	bool bWasMovingForDirection = false;
+	// 원하는 골반 방향(true = 뒷걸음 블렌드스페이스) / 마지막으로 골반 방향을 바꾼 뒤 지난 시간
+	bool bHipsBackwardTarget = false;
+	float TimeSinceHipsSwitch = 0.f;
 	// 캐릭터 정면 기준 실제 이동 방향(-180~180). Direction은 여기서 몸이 돌아간 만큼(RootYawOffset)을 뺀 값
 	float VelocityDirection = 0.f;
 	// 회전 애니메이션의 RemainingTurnYaw(가중치로 나눈 값) 직전 프레임 값
 	float PrevTurnYawCurve = 0.f;
 	bool bTurnCurveActive = false;
+	// 회전 마무리 중(회전량 커브는 끝났고 애니메이션 끝부분을 재생 중) / 남은 마무리 시간
+	bool bTurnRecovering = false;
+	float TurnRecoveryLeft = 0.f;
 	float TurnCooldown = 0.f;
 };

@@ -9,6 +9,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
 #include "HAL/IConsoleManager.h"
+#include "Curves/CurveVector.h"
 
 namespace
 {
@@ -150,7 +151,8 @@ void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
 				Foot.StepTime = 0.f;
 				Foot.StepStartWorld = FootWorld;
 			}
-			Target = Foot.LockedWorld;
+			// 들린 발은 첫 프레임에도 지금 자리(들린 높이)에서 옮기기를 시작한다. 바닥 높이(LockedWorld)를 넣으면 한 프레임 바닥에 찍혔다가 튄다(11-08)
+			Target = Foot.bStepping ? Foot.StepStartWorld : Foot.LockedWorld;
 		}
 		else
 		{
@@ -217,9 +219,30 @@ void UHuntAnimInstance::UpdateVelocity(float DeltaSeconds)
 	VelocityDirection = GroundSpeed > KINDA_SMALL_NUMBER ? FRotator::NormalizeAxis(Velocity.Rotation().Yaw - Character->GetActorRotation().Yaw) : 0.f;
 	// 이동 블렌드스페이스는 돌아간 몸 기준 방향으로 고른다(몸이 이동 방향 쪽으로 돌아가 있으면 옆걸음이 대각선 걸음이 된다)
 	Direction = GroundSpeed > KINDA_SMALL_NUMBER ? FRotator::NormalizeAxis(VelocityDirection - RootYawOffset) : 0.f;
-	// 키를 떼도 몸이 미끄러지는 동안은 이동 애니메이션을 유지해 속도에 맞춰 발걸음이 줄어들며 멈춘다
-	bShouldMove = GroundSpeed > 3.f;
+	// ALS ShouldMove 방식: 입력이 있거나 멈춤 속도(AHuntCharacter::StopBrakeSpeed)보다 빠르면 이동 중. 그 아래면 멈춤 처리를 하고 캐릭터도 빨리 제동한다
+	// 11-08: 150(걷기 샘플 속도)에서 끊으면 Jog 보폭이 벌어진 채 몸이 서고 발만 끌려와 40으로 낮춤
+	// (예전에 0까지 유지했을 때는 감속 중 교차 스텝이 느리게 늘어져 다리가 꼬여 보였다. 다시 그러면 StopBrakeSpeed를 올린다)
+	// 다른 플레이어 캐릭터(시뮬레이티드 프록시)는 입력(가속)을 모르므로 입력이 있는 것으로 보고 속도로만 판정한다
+	const bool bHasMovementInput = Character->GetLocalRole() == ROLE_SimulatedProxy
+		|| !Character->GetCharacterMovement()->GetCurrentAcceleration().IsNearlyZero();
+	bShouldMove = GroundSpeed > 3.f && (bHasMovementInput || GroundSpeed > Character->GetStopBrakeSpeed());
 	bIsFalling = Character->GetCharacterMovement()->IsFalling();
+
+	// 기울기(ALS CalculateRelativeAccelerationAmount + InterpLeanAmount): 속도 변화(가속)를 캐릭터 기준으로 바꿔
+	// 가속 중이면 최대 가속, 감속 중이면 최대 제동으로 나눈 비율(-1~1). ABP가 ALS_N_Lean 애디티브로 몸을 그쪽으로 기울인다
+	if (DeltaSeconds > KINDA_SMALL_NUMBER)
+	{
+		const UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
+		const FVector Accel = (Velocity - PrevVelocity) / DeltaSeconds;
+		const float MaxAccel = FVector::DotProduct(Accel, Velocity) > 0.f ? Movement->GetMaxAcceleration() : Movement->GetMaxBrakingDeceleration();
+		// 몸(루트)이 RootYawOffset만큼 돌아가 있으면 그 몸 기준으로 기울인다
+		const FVector Relative = (Character->GetActorRotation() + FRotator(0.f, RootYawOffset, 0.f)).UnrotateVector(Accel.GetClampedToMaxSize(MaxAccel)) / FMath::Max(MaxAccel, 1.f);
+		LeanFB = FMath::FInterpTo(LeanFB, Relative.X, DeltaSeconds, LeanInterpSpeed);
+		LeanLR = FMath::FInterpTo(LeanLR, Relative.Y, DeltaSeconds, LeanInterpSpeed);
+	}
+	PrevVelocity = Velocity;
+	// ALS는 걷기에서 절반, 달리기 이상에서 전부 기울인다(Weight_Gait 커브)
+	LeanAlpha = FMath::GetMappedRangeValueClamped(FVector2D(WalkAnimSpeed, JogAnimSpeed), FVector2D(0.5f, 1.f), GroundSpeed);
 }
 
 void UHuntAnimInstance::UpdateFoldedDirections(float DeltaSeconds)
@@ -256,10 +279,21 @@ void UHuntAnimInstance::UpdateGaitBlend()
 {
 	// 조깅 중이어도 걷기 샘플보다 느리면(벽에 막혀 미끄러질 때, 멈추는 중) 걷기로 바꾼다
 	// 조깅 블렌드스페이스는 조깅 샘플 속도로 고정되어 느리면 큰 보폭을 슬로모션으로 밟는다
-	bRunGait = Character->IsRunGait() && GroundSpeed > WalkAnimSpeed;
+	// 키를 떼고 멈추는 중에는 바로 걷기용 블렌드스페이스로 넘기고 속도를 그대로 넣어, 감속하는 동안 Jog → 걷기 → Idle 보폭으로
+	// 이어서 줄인다(ALS 스트라이드 블렌드). 조깅용은 조깅 샘플 속도 아래로 안 내려가 큰 보폭을 끝까지 밟다가 갑자기 섰다(11-08)
+	// 평소(입력 있음)에는 걷기와 조깅을 섞지 않는다: 중간 자세에서 다리가 모여 보이기 때문. 멈추는 동안은 잠깐이라 섞는다
+	const bool bStopping = Character->GetLocalRole() != ROLE_SimulatedProxy
+		&& Character->GetCharacterMovement()->GetCurrentAcceleration().IsNearlyZero();
+	bRunGait = Character->IsRunGait() && GroundSpeed > WalkAnimSpeed && !bStopping;
 	// 느릴 때는 재생 속도를 MinPlayRate까지만 내리고, 나머지는 Idle과 섞어(블렌드 속도) 보폭을 줄여 맞춘다
 	WalkPlayRate = FMath::Max(GroundSpeed / WalkAnimSpeed, MinPlayRate);
 	WalkBlendSpeed = FMath::Min(GroundSpeed / WalkPlayRate, WalkAnimSpeed);
+	if (bStopping && GroundSpeed > WalkAnimSpeed)
+	{
+		// 걷기 샘플보다 빠르면 블렌드스페이스가 걷기~조깅 샘플을 속도대로 섞으므로 재생 속도는 그대로
+		WalkPlayRate = 1.f;
+		WalkBlendSpeed = GroundSpeed;
+	}
 	RunBlendSpeed = FMath::Max(GroundSpeed, JogAnimSpeed);
 	LocomotionPlayRate = FMath::Max(GroundSpeed / FMath::Clamp(GroundSpeed, JogAnimSpeed, FMath::Max(JogAnimSpeed, GetRunAnimSpeed())), MinPlayRate);
 }
@@ -324,11 +358,16 @@ void UHuntAnimInstance::UpdateWeapon()
 	bHasWeapon = Weapon && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent();
 	AimAlpha = Character->GetAimBlend();
 	// 내린 자세 애디티브는 지향사격 상체 기준이라 질주 상체 자세 위에서는 뺀다
-	// shortcut: 400~550은 ABP Move 상태의 질주 상체 블렌드(MapRangeClamped) 구간을 옮겨 적은 것, ABP를 바꾸면 여기도 맞춘다
-	const float SprintUpperBodyWeight = FMath::GetMappedRangeValueClamped(FVector2D(400.f, 550.f), FVector2D(0.f, 1.f), GroundSpeed);
-	WallBlockAlpha = Character->GetWallBlockAlpha() * (1.f - SprintUpperBodyWeight);
-	RelaxedAlpha = Character->GetRelaxedBlend() * (1.f - SprintUpperBodyWeight);
+	SprintAlpha = FMath::GetMappedRangeValueClamped(SprintBlendSpeed, FVector2D(0.f, 1.f), GroundSpeed);
+	WallBlockAlpha = Character->GetWallBlockAlpha() * (1.f - SprintAlpha);
+	RelaxedAlpha = Character->GetRelaxedBlend() * (1.f - SprintAlpha);
 	AimOffsetAlpha = 1.f - RelaxedAlpha;
+	// Layering 부위 가중치(ABP_Hunt_ThirdPerson_Layered)
+	const float ReadySpine = FMath::GetMappedRangeValueClamped(ReadySpineFadeSpeed, FVector2D(ReadySpineAdd, 0.f), GroundSpeed);
+	const float RelaxedSpine = FMath::GetMappedRangeValueClamped(FVector2D(WalkAnimSpeed, JogAnimSpeed), FVector2D(RelaxedSpineAdd, RelaxedJogSpineAdd), GroundSpeed);
+	SpineAddAlpha = FMath::Lerp(ReadySpine, RelaxedSpine, RelaxedAlpha);
+	ArmLAddAlpha = RelaxedArmLAdd * RelaxedAlpha;
+	ArmRAddAlpha = RelaxedArmRAdd * RelaxedAlpha;
 	LeftHandIKAlpha = bHasWeapon ? 1.f : 0.f;
 	if (bHasWeapon)
 	{
@@ -390,11 +429,35 @@ void UHuntAnimInstance::UpdateRootYawOffset(float DeltaSeconds, bool bCanTurn)
 	}
 	else
 	{
-		// 이동 중: 몸을 시선 방향으로 되돌린다
-		RootYawOffset = FMath::FInterpTo(RootYawOffset, 0.f, DeltaSeconds, RootYawBlendOutSpeed);
+		// 이동 중: 몸을 시선 방향으로 되돌린다. 대기 자세면 ALS처럼 이동 방향 쪽으로 YawOffset만큼 돌린 곳으로
+		// ALS SmoothCharacterRotation처럼 도는 속도를 초당 MaxMoveYawRate로 제한한다. 구역 경계에서 목표가 수십 도 뛰어도 몸이 휙 돌지 않게
+		constexpr float MaxMoveYawRate = 500.f;
+		const float Desired = FMath::FInterpTo(RootYawOffset, GetMoveYawOffset(), DeltaSeconds, RootYawBlendOutSpeed);
+		RootYawOffset += FMath::Clamp(Desired - RootYawOffset, -MaxMoveYawRate * DeltaSeconds, MaxMoveYawRate * DeltaSeconds);
 		TurnDirection = 0;
 		bTurnRecovering = false;
 	}
+}
+
+float UHuntAnimInstance::GetMoveYawOffset() const
+{
+	if (!MoveYawOffsetFB || !MoveYawOffsetLR || !bShouldMove)
+	{
+		return 0.f;
+	}
+
+	// ALS UpdateRotationValues: FYaw/BYaw = FB.X/Y, LYaw/RYaw = LR.X/Y. 이동 방향 구역 상태가 그 값을 YawOffset 커브로 내고 캐릭터가 시선 + YawOffset으로 돈다
+	// 구역은 ALS CalculateQuadrant(경계 70/110 + 버퍼 5). ALS는 버퍼 조건이 항상 참이라 실제로는 앞 ±75, 옆 75~115로 고정이다
+	// 구역이 바뀔 때 값이 튀는 것(예: 앞 75도 = 30 → 오른쪽 = 0)은 ALS도 같고, 위 FInterpTo가 부드럽게 한다(ALS는 상태 블렌드 + 회전 보간)
+	const float Angle = VelocityDirection;
+	const FVector FB = MoveYawOffsetFB->GetVectorValue(Angle);
+	const FVector LR = MoveYawOffsetLR->GetVectorValue(Angle);
+	const float AbsAngle = FMath::Abs(Angle);
+	const float Offset = AbsAngle <= 75.f ? FB.X : AbsAngle > 115.f ? FB.Y : Angle > 0.f ? LR.Y : LR.X;
+	// 방향을 빠르게 뒤집으면 속도가 0 근처를 지나며 속도 방향이 아무 값으로 튄다(입력이 있어 bShouldMove는 계속 true)
+	// 느릴 때는 오프셋을 줄여 그 방향을 따라 몸이 이리저리 돌지 않게 한다(50 → 걷기 속도에서 0 → 1)
+	const float SpeedWeight = FMath::GetMappedRangeValueClamped(FVector2D(50.f, WalkAnimSpeed), FVector2D(0.f, 1.f), GroundSpeed);
+	return Offset * RelaxedAlpha * SpeedWeight;
 }
 
 void UHuntAnimInstance::AdvanceTurnTimers(float DeltaSeconds)

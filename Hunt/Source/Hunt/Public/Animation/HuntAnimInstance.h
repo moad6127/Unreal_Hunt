@@ -8,6 +8,7 @@
 
 class AHuntCharacter;
 class UAnimSequence;
+class UCurveVector;
 
 /**
  * 3인칭 전신용. 다른 사람이 보는 내 몸, 내 그림자, 내 하체(Leader Pose)가 이 포즈를 쓴다
@@ -49,6 +50,21 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	float BackwardDirection = 180.f;
+
+	// 기울기(-1~1): 앞뒤(가속 +), 좌우(오른쪽 가속 +). ABP의 ALS_N_Lean 블렌드스페이스(X = LR, Y = FB) 입력
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float LeanFB = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float LeanLR = 0.f;
+
+	// 기울기 애디티브 가중치(걷기 0.5 → 조깅 1, ALS Weight_Gait 방식)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float LeanAlpha = 0.f;
+
+	// 기울기가 가속 변화를 따라가는 속도(ALS GroundedLeanInterpSpeed = 4)
+	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0"))
+	float LeanInterpSpeed = 4.f;
 
 	// 블렌드스페이스에 넣는 방향(Direction)이 실제 이동 방향을 따라가는 속도(ALS VelocityBlendInterpSpeed = 12). 0이면 바로
 	// 높이면 반응이 빨라지고, 낮추면 방향을 바꿀 때 다리가 부드럽지만 바꾼 직후 발이 잠깐 미끄러진다
@@ -172,6 +188,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
 	float RootYawBlendOutSpeed = 10.f;
 
+	// 대기 자세로 걸을 때 몸(루트)을 이동 방향 쪽으로 돌리는 양(ALS YawOffset_FB/LR, 입력 = 시선 기준 이동 방향)
+	// FB: X = 앞 구역, Y = 뒤 구역. LR: X = 왼쪽 구역, Y = 오른쪽 구역. 상체는 시선 애디티브(AimYaw)가 시선으로 되돌린다
+	// 비어 있으면 몸을 시선 정면으로 둔다
+	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace")
+	TObjectPtr<UCurveVector> MoveYawOffsetFB;
+
+	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace")
+	TObjectPtr<UCurveVector> MoveYawOffsetLR;
+
 	// 전신 손의 총(BodyWeapon)이 이 메시에 붙어 있으면 true
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	bool bHasWeapon = false;
@@ -193,6 +218,48 @@ protected:
 	// 총을 시선에 겨누는 Lyra 에임 오프셋 대신 목·머리 위주의 ALS 시선 애디티브(ALS_N_Look)를 쓴다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float RelaxedAlpha = 0.f;
+
+	// 질주 상체 블렌드(0~1, GroundSpeed가 SprintBlendSpeed 구간을 지나는 정도). ABP Overlay의 질주 블렌드와
+	// 대기·벽 앞 내린 자세 가중치(질주 중에는 뺌)가 같이 쓴다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float SprintAlpha = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	FVector2D SprintBlendSpeed = FVector2D(400.f, 550.f);
+
+	// ABP Layering(ALS LayerBlending) 부위별 걸음 흔들림 가중치: 상체 = Overlay ⊕ (Base ⊖ ALS_N_Pose) × 가중치
+	// 척추·머리(spine_01 레이어가 목까지 덮음). 준비·조준 값과 대기 값을 RelaxedAlpha로 섞는다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Layering")
+	float SpineAddAlpha = 0.f;
+
+	// 팔(clavicle 레이어, 로컬 공간)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Layering")
+	float ArmLAddAlpha = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Layering")
+	float ArmRAddAlpha = 0.f;
+
+	// 준비·조준: 이 값에서 시작해 속도가 ReadySpineFadeSpeed 구간을 지나며 0이 된다(총을 겨눈 상체가 흔들리지 않게)
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ReadySpineAdd = 0.4f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering")
+	FVector2D ReadySpineFadeSpeed = FVector2D(300.f, 600.f);
+
+	// 대기: 걷기(WalkAnimSpeed)에서 RelaxedSpineAdd(ALS 걷기 실측 1.0), Jog(JogAnimSpeed)에서 RelaxedJogSpineAdd
+	// Base가 GASP Jog라 1.0이면 상체가 너무 숙고 흔들린다(11-08)
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float RelaxedSpineAdd = 1.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float RelaxedJogSpineAdd = 0.4f;
+
+	// 대기 팔(ALS 걷기 실측 왼쪽 0, 오른쪽 0.2~0.3). 준비·조준은 0
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float RelaxedArmLAdd = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float RelaxedArmRAdd = 0.3f;
 
 	// Lyra 에임 오프셋(총을 시선에 겨눔) 가중치 = 1 - RelaxedAlpha
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
@@ -291,6 +358,8 @@ private:
 
 	void UpdateTurnInPlace(float DeltaSeconds);
 	void UpdateRootYawOffset(float DeltaSeconds, bool bCanTurn);
+	// 이동 중 몸 Yaw 목표(ALS YawOffset): 대기 자세에서만, RelaxedAlpha만큼
+	float GetMoveYawOffset() const;
 	void AdvanceTurnTimers(float DeltaSeconds);
 	void ApplyTurnYawCurve();
 	void TryStartTurn(bool bCanTurn);
@@ -319,6 +388,8 @@ private:
 	bool bWasMovingForFootLock = false;
 
 	float PrevActorYaw = 0.f;
+	// 가속(기울기) 계산용 지난 프레임 속도
+	FVector PrevVelocity = FVector::ZeroVector;
 	// 골반 방향 전환을 기다린 시간
 	float HipsSwitchWaitTime = 0.f;
 	// 뒤 블렌드스페이스 방향을 정뒤 = 0으로 둔 보간 값(-90~90) / 지난 프레임 움직이고 있었는지(출발할 때 보간 없이 맞추려고)

@@ -39,6 +39,9 @@ public:
 	// 걸음 상태(false = 걷기, true = 조깅·질주). 이동 애니메이션을 섞지 않고 이 값으로 바꿔 끼운다
 	bool IsRunGait() const { return bRunGait; }
 
+	// 키를 뗀 뒤 3인칭 애님이 걸음을 멈추고 발 고정을 시작하는 속도. 이 아래에서 캐릭터도 빨리 제동한다
+	float GetStopBrakeSpeed() const { return StopBrakeSpeed; }
+
 	// 지금 쏘면 탄이 퍼지는 원뿔의 반각(도). 발사와 크로스헤어가 같이 쓴다
 	float GetCurrentSpread() const;
 
@@ -198,6 +201,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.1", ClampMax = "1.0"))
 	float BackwardSpeedScale = 0.6f;
 
+	// 키를 떼고 이 속도(cm/s) 아래가 되면 3인칭 애님이 멈춤 처리(디딘 발 고정)를 시작한다(UHuntAnimInstance가 이 값을 읽음)
+	// ALS처럼 거의 멈출 때까지 걸음 사이클을 재생해, 감속하는 동안 몸과 다리가 같이 모이게 한다. 높이면 몸이 먼저 서고 발만 끌려온다(11-08 영상)
+	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.0"))
+	float StopBrakeSpeed = 40.f;
+
+	// 위 속도 아래에서 쓰는 제동 감속(cm/s²). 평소 제동은 완만하게 두고 마지막 구간만 빨리 세운다(150에서 약 7cm 미끄러짐)
+	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.0"))
+	float StopBrakingDeceleration = 1500.f;
+
 	// BeginPlay에서 이 총을 스폰해 손에 든다. 비워두면 맨손
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> DefaultWeapon;
@@ -277,6 +289,9 @@ private:
 	void UpdateFirstPersonArms(float AimBlend);
 	FTransform GetSightAlignedArmsTransform(float AimBlend) const;
 	FVector ArmsWorldToCamera(const FTransform& ArmsToCamera, const FVector& WorldLocation) const;
+
+	// BP/생성자에서 정한 평소 제동 감속. 멈춤 마지막 구간에만 StopBrakingDeceleration으로 바꾼다
+	float DefaultBrakingDeceleration = 500.f;
 
 	// 달리기 토글 상태. 실제 최대 속도는 Tick에서 이동 방향 비율을 곱해 정한다
 	bool bRunning = false;

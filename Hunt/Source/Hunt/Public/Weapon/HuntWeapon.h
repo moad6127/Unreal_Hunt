@@ -25,10 +25,6 @@ public:
 	// 연발로 방아쇠를 누르고 있는 중
 	bool IsAutoFiring() const;
 
-	// 쏘는 중에 바꿔도 안전하도록 연발을 멈춘 뒤 바꾼다
-	UFUNCTION(BlueprintCallable, Category = "Weapon")
-	void SetFireMode(EHuntFireMode NewFireMode);
-
 	USkeletalMeshComponent* GetMesh() const { return Mesh; }
 
 	// 왼손이 잡을 위치(월드). 지향사격 소켓과 조준 소켓(없으면 지향사격 소켓) 사이를 AimAlpha로 섞는다
@@ -40,7 +36,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> Definition;
 
-	// 시작 값은 Definition->FireMode. 실행 중에는 SetFireMode로 바꾼다
+	// 시작 값은 Definition->FireMode
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Weapon")
 	EHuntFireMode FireMode = EHuntFireMode::Single;
 

@@ -81,7 +81,6 @@ void AHuntCharacter::BeginPlay()
 
 	// 기본 상태는 걷기 (BP에서 WalkSpeed를 바꿔도 반영되도록 BeginPlay에서 설정)
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
-	DefaultBrakingDeceleration = GetCharacterMovement()->BrakingDecelerationWalking;
 
 	// 메시 애님(병렬 평가)은 TG_PostPhysics까지 늦게 끝날 수 있어, 같은 그룹인 Tick이 이전 프레임 포즈의 머리·가늠자를 읽으면 화면이 튄다
 	AddTickPrerequisiteComponent(GetMesh());
@@ -262,11 +261,8 @@ void AHuntCharacter::UpdateMovementSpeed(float DeltaSeconds)
 	{
 		// 멈추는 중: 실제 속도가 걷기와 조깅의 중간 아래로 내려가면 걷기 걸음으로 감속한다
 		bRunGait = bRunGait && GetVelocity().Size2D() > (WalkSpeed + RunSpeed) * 0.5f;
-		// 애님이 멈춤 처리(발 고정)를 시작하는 속도 아래에서는 빨리 제동해, 고정한 발과 몸이 벌어지지 않게 한다
-		Movement->BrakingDecelerationWalking = GetVelocity().Size2D() <= StopBrakeSpeed ? StopBrakingDeceleration : DefaultBrakingDeceleration;
 		return;
 	}
-	Movement->BrakingDecelerationWalking = DefaultBrakingDeceleration;
 
 	const float Angle = GetInputAngle(InputDirection);
 	const float DirectionScale = GetDirectionSpeedScale(Angle);

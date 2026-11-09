@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`Hunt` is an Unreal Engine **5.8** C++ project (created from the Blank template, hence the `TP_Blank` → `Hunt` game-name redirects in `Config/DefaultEngine.ini`). It is at an early stage: a single runtime module with stub `AHuntCharacter` and `AHuntGameMode` classes. Engine is installed at `C:\Program Files\Epic Games\UE_5.8` (a 5.7 install also exists. Don't use it).
+`Hunt` is an Unreal Engine **5.8** C++ project (created from the Blank template, hence the `TP_Blank` → `Hunt` game-name redirects in `Config/DefaultEngine.ini`). It has a single runtime module (`Source/Hunt`). Engine is installed at `C:\Program Files\Epic Games\UE_5.8` (a 5.7 install also exists. Don't use it).
 
 ## Build commands (PowerShell)
 
@@ -36,11 +36,18 @@ $UE = "C:\Program Files\Epic Games\UE_5.8\Engine"
 - Module: `Source/Hunt` (`Hunt.Build.cs`, deps: Core, CoreUObject, Engine, InputCore, EnhancedInput). Targets are `Source/Hunt.Target.cs` (Game) and `Source/HuntEditor.Target.cs` (Editor), both `BuildSettingsVersion.V7` / `EngineIncludeOrderVersion.Unreal5_8`.
 - Classes are grouped by feature subfolder, mirrored between `Public/` and `Private/` (e.g. `Public/Character/HuntCharacter.h` ↔ `Private/Character/HuntCharacter.cpp`). Includes use the subfolder path: `#include "Character/HuntCharacter.h"`. Exported classes use `HUNT_API`.
 - Input uses **Enhanced Input** (`DefaultInput.ini` sets `EnhancedPlayerInput` / `EnhancedInputComponent`). Bind actions through `UEnhancedInputComponent` and Input Mapping Contexts rather than legacy axis/action mappings.
-- Content: `Content/Asset/Characters/Mannequins` holds the Manny/Quinn meshes and pistol/rifle/unarmed animation sets. `Content/Map/DefaultMap.umap` is the project map. `GameDefaultMap` currently still points to the engine's `/Engine/Maps/Templates/OpenWorld`.
+- Content: `Content/Asset/Characters/Mannequins` holds the Manny/Quinn meshes and pistol/rifle/unarmed animation sets. `Content/Map/DefaultMap.umap` is the project map and the `GameDefaultMap`.
 
 ## Editor MCP integration
 
 The project enables the `ModelContextProtocol`, `AllToolsets` and `Terminal` plugins. When the editor is running they expose an MCP server at `http://127.0.0.1:8000/mcp`, registered in `.mcp.json` as `unreal-mcp`. Use those tools to inspect or edit assets, levels and Blueprints. If the server is unreachable (ECONNREFUSED), the editor is not running. `.uasset`/`.umap` files are binary and cannot be edited as text.
+
+**애니메이션 블루프린트(ABP) 작업에는 프로젝트 플러그인 `Plugins/HuntAnimTools`를 쓴다.** MCP 툴셋 이름은 `HuntAnimTools.HuntAnimGraphToolset`이다.
+
+- 도구: `ListGraphs`, `DescribeGraph`, `AddState`, `AddConduit`, `AddTransition`, `SetEntryState`, `RenameNode`, `RemoveNodes`, `CopyNodes`, `MoveNodes`, `AddBlendPin`, `CompileWithMessages`.
+- 스테이트·전환 추가, 애님 노드 삭제, 그래프 간 복사·이동은 이 도구로 직접 한다. T3D 붙여넣기나 사용자 손작업을 요청하지 않는다. 다른 프로젝트에서 잘라 온 T3D는 붙여넣지 않는다(에디터 충돌).
+- 일반 노드 생성·핀 연결·전환 규칙 그래프는 `BlueprintTools`, 노드·전환 속성은 `ObjectTools`로 한다.
+- 도구가 부족해도 바로 추가하지 않는다. 어떤 작업을 할 수 있게 되는 도구인지 사용자에게 먼저 설명하고, 허락을 받은 뒤에 추가한다.
 
 
 
@@ -90,7 +97,7 @@ theHunter: Call of the Wild 스타일 사냥 게임에 **총기 부착물(스코
 - **발사 방향과 영점(Zeroing, M2 예정):** 탄은 총구에서 나가고, 방향은 카메라 중앙 트레이스로 찾은 조준점을 향한다(`AHuntWeapon::GetAimDirection`, M1 구현). M2에서 스코프와 함께 영점을 넣는다: 조준점 거리를 영점 거리로 제한하고 그 거리의 낙차(½·g·t²)만큼 조준점을 올린다. 영점 거리보다 가까우면 크로스헤어에 정확히 맞고, 멀면 탄이 자연스럽게 떨어진다. 영점 거리는 스코프 부착물이 정한다.
 - **벽 앞 총 내리기 (구현됨, 보강 예정):** 카메라 기준 총 쪽 오프셋에서 구 스윕으로 앞을 검사해 `WallBlockAlpha`(0~1)를 만들고(`AHuntCharacter::UpdateWallBlock`), 전신·1인칭 ABP가 내린 자세 애디티브(`A_Rifle_LoweredArms_Additive`)를 그만큼 섞는다. 내린 동안은 조준 불가, 전신 AO Pitch 제거, 크로스헤어 흐림, 탄은 총구 방향으로 나간다. **다음 단계에서 할 것:** ① 총 내리기는 지형지물(`WorldStatic`·`WorldDynamic`)에만 반응하고 캐릭터·동물(`Pawn`) 앞에서는 내리지 않아 근접 사격이 되게 한다(세부 규칙이 필요해지면 전용 트레이스 채널로). ② 근접 사격 판정 보강: 카메라→총구 검사(`AHuntWeapon::GetSpawnLocation`)가 `Pawn`도 막도록 해서, 총구가 상대 몸 속이면 몸 표면에서 탄이 생겨 맞게 한다. 캡슐 크기는 바꾸지 않는다. 1인칭 총이 생명체 몸에 박혀 보이는 것은 당분간 허용한다.
 - **소켓 이름 규칙:** `Socket_Scope`, `Socket_Grip`, `Socket_Muzzle`, `Socket_Stock`, ADS 정렬용 `Socket_Sight`, 왼손 IK 목표 `Socket_LeftHand`(3인칭, 총 메시마다 추가), 1인칭 왼손목 위치 `Socket_LeftHand_FP`(1인칭 그립 포즈의 hand_l이 닿는 곳, 총·손잡이 메시마다 추가). `Socket_Sight`는 기능이 없어도 M1부터 이름을 약속해 둔다.
-- **1인칭 캐릭터 (배그식, 메시 3개):** 전신 메시는 다른 사람에게만 보이고 내 화면에는 그림자만 남긴다(`WorldSpaceRepresentation`). 내 화면에는 카메라에 붙은 **1인칭 팔**(`SK_Arms`, `FirstPerson`, 1인칭 ABP)과 전신 포즈를 Leader Pose로 따라가는 **하체**(`SK_Legs`)만 보인다. 카메라 위치는 전신의 머리 뼈를 보간으로 따라가고 회전은 컨트롤 회전을 쓴다. 내 총은 1인칭 팔에, 다른 사람 총은 전신 손에 붙는다. 총이 카메라에 고정되므로 걸을 때 흔들림은 1인칭 애니메이션에 들어 있는 것만 보인다. 1인칭 팔 애니메이션은 LPSP 원본을 손·`ik_hand_gun`의 메시 공간 위치 그대로 Manny로 리타깃한 것(`Asset/Characters/LPSP/AnimationsFP`, 리타깃 원본·설정은 정리함)이라 메시 공간이 곧 카메라 공간(머리 = 원점, +Y = 정면)이다. 그래서 팔은 카메라에 고정(Yaw -90)으로 붙이고, 내 총은 LPSP처럼 `ik_hand_gun`에 붙인다. 1인칭 왼손은 손 모양·팔꿈치를 그립 포즈 애니메이션(`Asset/Characters/FirstPerson/A_FP_Rifle_*_Pose_Grip`)이 정하고, 손목 위치만 Two Bone IK로 총의 `Socket_LeftHand_FP`에 맞춘다(소켓이 없으면 IK 끔). ADS 정렬(가늠자를 화면 중앙에)은 팔 자세는 그대로 두고 팔 컴포넌트 전체를 옮겨 맞춘다(`Socket_Sight`). 애님 인스턴스는 메시별로 나눈다: 전신 `UHuntAnimInstance`(`ABP_Hunt_ThirdPerson`), 1인칭 팔 `UHuntFirstPersonAnimInstance`(`ABP_Hunt_FirstPersonArms`).
+- **1인칭 캐릭터 (배그식, 메시 3개):** 전신 메시는 다른 사람에게만 보이고 내 화면에는 그림자만 남긴다(`WorldSpaceRepresentation`). 내 화면에는 카메라에 붙은 **1인칭 팔**(`SK_Arms`, `FirstPerson`, 1인칭 ABP)과 전신 포즈를 Leader Pose로 따라가는 **하체**(`SK_Legs`)만 보인다. 카메라 위치는 전신의 머리 뼈를 보간으로 따라가고 회전은 컨트롤 회전을 쓴다. 내 총은 1인칭 팔에, 다른 사람 총은 전신 손에 붙는다. 총이 카메라에 고정되므로 걸을 때 흔들림은 1인칭 애니메이션에 들어 있는 것만 보인다. 1인칭 팔 애니메이션은 LPSP 원본을 손·`ik_hand_gun`의 메시 공간 위치 그대로 Manny로 리타깃한 것(`Asset/Characters/LPSP/AnimationsFP`, 리타깃 원본·설정은 정리함)이라 메시 공간이 곧 카메라 공간(머리 = 원점, +Y = 정면)이다. 그래서 팔은 카메라에 고정(Yaw -90)으로 붙이고, 내 총은 LPSP처럼 `ik_hand_gun`에 붙인다. 1인칭 왼손은 손 모양·팔꿈치를 그립 포즈 애니메이션(`Asset/Characters/FirstPerson/A_FP_Rifle_*_Pose_Grip`)이 정하고, 손목 위치만 Two Bone IK로 총의 `Socket_LeftHand_FP`에 맞춘다(소켓이 없으면 IK 끔). ADS 정렬(가늠자를 화면 중앙에)은 팔 자세는 그대로 두고 팔 컴포넌트 전체를 옮겨 맞춘다(`Socket_Sight`). 애님 인스턴스는 메시별로 나눈다: 전신 `UHuntAnimInstance`(`ABP_Hunt_ThirdPerson_Layered`), 1인칭 팔 `UHuntFirstPersonAnimInstance`(`ABP_Hunt_FirstPersonArms_SM`).
 
 ## 마일스톤
 

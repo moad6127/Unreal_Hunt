@@ -8,7 +8,35 @@
 
 class AHuntCharacter;
 class UAnimSequence;
+class UAnimSequenceBase;
 class UCurveVector;
+class UAnimMontage;
+
+// 발이 꼬인 채 멈출 때 재생하는 마지막 한 걸음 클립과 재생 구간(GASP 멈춤 애니메이션, 루트 모션)
+USTRUCT()
+struct FHuntStopClip
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly)
+	TObjectPtr<UAnimSequenceBase> Anim;
+
+	UPROPERTY(EditDefaultsOnly)
+	bool bMovingLeft = true;
+
+	UPROPERTY(EditDefaultsOnly)
+	float StartTime = 0.f;
+
+	UPROPERTY(EditDefaultsOnly)
+	float EndTime = 0.f;
+
+	// 시작 프레임의 발 위치(컴포넌트 공간). 지금 자세와 가장 비슷한 클립을 고르는 데 쓴다
+	UPROPERTY(EditDefaultsOnly)
+	FVector2D FootL = FVector2D::ZeroVector;
+
+	UPROPERTY(EditDefaultsOnly)
+	FVector2D FootR = FVector2D::ZeroVector;
+};
 
 /**
  * 3인칭 전신용. 다른 사람이 보는 내 몸, 내 그림자, 내 하체(Leader Pose)가 이 포즈를 쓴다
@@ -23,6 +51,19 @@ public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
+	// ABP Locomotion > Stop 안쪽 상태에 들어갈 때 오는 노티파이(ALS (N) Stop States). Lock = 디딘 발 고정, Plant = 공중 발을 디딘 포즈로 옮긴 뒤 고정
+	UFUNCTION()
+	void AnimNotify_HuntStopLockL();
+
+	UFUNCTION()
+	void AnimNotify_HuntStopLockR();
+
+	UFUNCTION()
+	void AnimNotify_HuntStopPlantL();
+
+	UFUNCTION()
+	void AnimNotify_HuntStopPlantR();
+
 protected:
 	// EditAnywhere: 애님 프리뷰 에디터에서 값을 바꿔 상태 전환을 확인할 수 있게
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
@@ -32,8 +73,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bShouldMove = false;
 
-	// 이동 방향 (-180~180, 캐릭터 정면 기준). 8방향 블렌드스페이스용
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	// 몸 기준 이동 방향(-180~180). ForwardDirection·BackwardDirection과 멈춤 클립 선택에 쓴다
 	float Direction = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
@@ -50,6 +90,13 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	float BackwardDirection = 180.f;
+
+	// ABP Stop의 Plant 포즈를 평가할 위치(사이클 정규화 시간, 0~1). 이동 방향에 따라 그 발을 디딘 시점이 다르다(ALS Plant 시간)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float PlantTimeL = 0.117f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float PlantTimeR = 0.618f;
 
 	// 기울기(-1~1): 앞뒤(가속 +), 좌우(오른쪽 가속 +). ABP의 ALS_N_Lean 블렌드스페이스(X = LR, Y = FB) 입력
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
@@ -121,13 +168,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
 	float ForwardRunAnimSpeed = 600.f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
-	float SideRunAnimSpeed = 350.f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
-	float BackwardRunAnimSpeed = 350.f;
-
-	// 조깅 샘플(ALS 달리기) 속도. 모든 방향이 같다
+	// 조깅 샘플(ALS 달리기) 속도. 모든 방향이 같고, 옆·뒤의 최고 속도이기도 하다
 	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
 	float JogAnimSpeed = 350.f;
 
@@ -197,10 +238,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace")
 	TObjectPtr<UCurveVector> MoveYawOffsetLR;
 
-	// 전신 손의 총(BodyWeapon)이 이 메시에 붙어 있으면 true
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
-	bool bHasWeapon = false;
-
 	// 시선 상하 각도(-90~90). 에임 오프셋으로 총이 시선을 따라오게 한다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float AimPitch = 0.f;
@@ -232,10 +269,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Layering")
 	float SpineAddAlpha = 0.f;
 
-	// 팔(clavicle 레이어, 로컬 공간)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Layering")
-	float ArmLAddAlpha = 0.f;
-
+	// 오른팔(clavicle_r 레이어, 로컬 공간)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Layering")
 	float ArmRAddAlpha = 0.f;
 
@@ -247,17 +281,14 @@ protected:
 	FVector2D ReadySpineFadeSpeed = FVector2D(300.f, 600.f);
 
 	// 대기: 걷기(WalkAnimSpeed)에서 RelaxedSpineAdd(ALS 걷기 실측 1.0), Jog(JogAnimSpeed)에서 RelaxedJogSpineAdd
-	// Base가 GASP Jog라 1.0이면 상체가 너무 숙고 흔들린다(11-08)
+	// 1.0이면 Jog에서 상체가 너무 숙고 흔들려 줄였다(11-08). ALS는 Jog에서도 1.0이다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float RelaxedSpineAdd = 1.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float RelaxedJogSpineAdd = 0.4f;
 
-	// 대기 팔(ALS 걷기 실측 왼쪽 0, 오른쪽 0.2~0.3). 준비·조준은 0
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float RelaxedArmLAdd = 0.f;
-
+	// 대기 오른팔(ALS 걷기 실측 0.2~0.3, 왼팔은 0이라 없다). 준비·조준은 0
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float RelaxedArmRAdd = 0.3f;
 
@@ -292,13 +323,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FootLock")
 	FVector FootLockLocationR = FVector::ZeroVector;
 
-	// 조준 중 서 있는 자세(Lyra 사격 Idle, 왼발 앞). 발의 Idle 자리(ik_foot 위치)를 여기서 읽는다
+	// 멈출 때 상체 무게 이동 애디티브(ALS_N_Stop_L/R_Down). 왼발·오른발 고정에 맞춰 슬롯으로 재생한다
 	UPROPERTY(EditDefaultsOnly, Category = "FootLock")
-	TObjectPtr<UAnimSequence> IdleAnim;
+	TObjectPtr<UAnimSequenceBase> StopDownAnimL;
 
-	// 대기·준비 중 서 있는 자세(ALS 기본자세, 두 발 나란히). ABP Idle 하체와 같은 애니메이션. 비우면 IdleAnim 자리를 쓴다
 	UPROPERTY(EditDefaultsOnly, Category = "FootLock")
-	TObjectPtr<UAnimSequence> RelaxedIdleAnim;
+	TObjectPtr<UAnimSequenceBase> StopDownAnimR;
 
 	// 서 있는 하체 진행도(0 = ALS 기본자세 두 발 나란히, 1 = Lyra 사격 자세). 대기가 아니면(준비·조준) 1로 LegStanceBlendTime 동안 일정하게 변한다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FootLock")
@@ -317,25 +347,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.01"))
 	float LegStanceBlendTime = 0.3f;
 
-	// 고정된 발이 Idle 자리에서 이만큼(cm, 수평) 벗어나 있으면 한 걸음 옮긴다
-	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.0"))
-	float FootStepThreshold = 15.f;
-
-	// 옮기는 발이 반대쪽 발과 옆으로 이만큼(cm)은 떨어져 있게 한다(다리가 X자로 꼬이지 않게)
-	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.0"))
-	float FootStepMinGap = 10.f;
-
-	// 옮기는 발을 드는 높이(cm)
-	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.0"))
-	float FootStepLift = 6.f;
-
-	// 멈추고 나서 이 시간(초)이 지나야 발을 옮긴다(Idle로 섞이는 중에는 옮기지 않는다)
-	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.0"))
-	float FootStepDelay = 0.3f;
-
-	// 발 하나를 옮기는 시간(초)
-	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.05"))
-	float FootStepDuration = 0.3f;
+	// 옆으로 가다 발이 꼬인 채 멈출 때 재생할 클립. 캡슐은 클립의 루트 모션이 움직인다
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock")
+	TArray<FHuntStopClip> CrossedStopClips;
 
 	// 움직이기 시작할 때 고정을 푸는 시간(초)
 	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.01"))
@@ -371,21 +385,22 @@ private:
 	struct FFootLock
 	{
 		bool bLocked = false;
-		bool bStepping = false;
-		// 이번에 멈춘 뒤 이미 한 번 옮겼다
-		bool bStepped = false;
+		// Stop 노티파이가 고정을 요청함 / 남은 대기 시간(Plant는 다리가 디딘 포즈로 옮겨질 때까지 기다린다)
+		bool bLockRequested = false;
+		float LockDelay = 0.f;
 		float Alpha = 0.f;
-		float StepTime = 0.f;
 		FVector LockedWorld = FVector::ZeroVector;
-		FVector StepStartWorld = FVector::ZeroVector;
-		// 지금 서 있는 자세의 발 자리(컴포넌트 공간, 루트 회전 전). 조준 여부에 따라 아래 둘 중 하나
-		FVector IdleLocation = FVector::ZeroVector;
 	};
 	FFootLock Feet[2];
-	FVector AimIdleFeet[2] = {FVector::ZeroVector, FVector::ZeroVector};
-	FVector RelaxedIdleFeet[2] = {FVector::ZeroVector, FVector::ZeroVector};
-	float StandingTime = 0.f;
-	bool bWasMovingForFootLock = false;
+	void RequestStopFoot(int32 Side, bool bPlant);
+	bool TryPlayCrossedStop();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimMontage> CrossedStopMontage;
+	// 클립의 끝 위치(블렌드 아웃 시작) / 클립 재생 중 / 클립 뒤 Stop 진입에서 발 처리를 건너뛴다
+	float CrossedStopEndTime = 0.f;
+	bool bCrossedStopActive = false;
+	bool bSkipStopFeet = false;
 
 	float PrevActorYaw = 0.f;
 	// 가속(기울기) 계산용 지난 프레임 속도

@@ -6,9 +6,6 @@
 #include "GameFramework/GameModeBase.h"
 #include "HuntGameMode.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class HUNT_API AHuntGameMode : public AGameModeBase
 {

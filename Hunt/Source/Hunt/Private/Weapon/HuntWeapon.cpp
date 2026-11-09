@@ -88,12 +88,6 @@ bool AHuntWeapon::IsAutoFiring() const
 	return GetWorldTimerManager().IsTimerActive(AutoFireTimer);
 }
 
-void AHuntWeapon::SetFireMode(EHuntFireMode NewFireMode)
-{
-	StopFire();
-	FireMode = NewFireMode;
-}
-
 void AHuntWeapon::Shoot()
 {
 	const APawn* OwnerPawn = GetInstigator();

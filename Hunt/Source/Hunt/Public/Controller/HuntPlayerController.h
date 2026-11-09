@@ -8,9 +8,6 @@
 
 class UInputMappingContext;
 
-/**
- * 
- */
 UCLASS()
 class HUNT_API AHuntPlayerController : public APlayerController
 {

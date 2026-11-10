@@ -24,6 +24,10 @@ struct FHuntStopClip
 	UPROPERTY(EditDefaultsOnly)
 	bool bMovingLeft = true;
 
+	// 사격 자세(조준·준비)로 착지하는 클립. 아니면 대기 자세로 착지한다
+	UPROPERTY(EditDefaultsOnly)
+	bool bAimStance = false;
+
 	UPROPERTY(EditDefaultsOnly)
 	float StartTime = 0.f;
 
@@ -351,6 +355,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "FootLock")
 	TArray<FHuntStopClip> CrossedStopClips;
 
+	// Jog로 옆으로 가다 입력을 놓을 때 재생할 멈춤 클립(GASP Run 멈춤). 캡슐은 클립의 루트 모션이 움직인다
+	UPROPERTY(EditDefaultsOnly, Category = "FootLock")
+	TArray<FHuntStopClip> JogStopClips;
+
 	// 움직이기 시작할 때 고정을 푸는 시간(초)
 	UPROPERTY(EditDefaultsOnly, Category = "FootLock", meta = (ClampMin = "0.01"))
 	float FootUnlockTime = 0.15f;
@@ -394,6 +402,9 @@ private:
 	FFootLock Feet[2];
 	void RequestStopFoot(int32 Side, bool bPlant);
 	bool TryPlayCrossedStop();
+	bool TryPlayJogStop();
+	// 표에서 지금 이동 방향·자세·발 위치에 맞는 클립을 골라 재생한다. ClipFootSpeed = 클립 시작 시 디딘 발의 몸 기준 속도(cm/s)
+	bool TryPlayStopClip(const TArray<FHuntStopClip>& Clips, float PlayRate, float ClipFootSpeed);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimMontage> CrossedStopMontage;

@@ -49,8 +49,26 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 bool UHuntAnimInstance::TryPlayCrossedStop()
 {
-	// 옆걸음으로 멈출 때 두 발이 꼬여 있을 때만
-	if (GetFeetSideGap() >= 0.f || FMath::Abs(FMath::Abs(Direction) - 90.f) > 45.f || !Character->GetCharacterMovement()->IsMovingOnGround())
+	// 옆걸음으로 멈출 때 두 발이 꼬여 있을 때만. 클립의 시작 속도(186)를 멈춤 진입 속도(약 150)에 맞춘다
+	return GetFeetSideGap() < 0.f && TryPlayStopClip(CrossedStopClips, 0.8f, 186.f);
+}
+
+bool UHuntAnimInstance::TryPlayJogStop()
+{
+	// 걷기 멈춤과 같은 조건: 입력을 놓은 뒤 두 발이 꼬였을 때만. 걷기 최고 속도(165)보다 확실히 빠를 때만 Jog로 본다
+	// 몸이 뒤를 향한 옆걸음은 클립(LR·RL)과 골반 방향이 달라 제외한다
+	constexpr float MinJogStopSpeed = 200.f;
+	if (GroundSpeed <= MinJogStopSpeed || bMovingBackward || GetFeetSideGap() >= 0.f)
+	{
+		return false;
+	}
+	// 클립의 시작 속도(350)를 지금 속도에 맞춘다
+	return TryPlayStopClip(JogStopClips, FMath::Clamp(GroundSpeed / 350.f, 0.6f, 1.f), 350.f);
+}
+
+bool UHuntAnimInstance::TryPlayStopClip(const TArray<FHuntStopClip>& Clips, float PlayRate, float ClipFootSpeed)
+{
+	if (FMath::Abs(FMath::Abs(Direction) - 90.f) > 45.f || !Character->GetCharacterMovement()->IsMovingOnGround())
 	{
 		return false;
 	}
@@ -63,10 +81,11 @@ bool UHuntAnimInstance::TryPlayCrossedStop()
 
 	const FHuntStopClip* Best = nullptr;
 	double BestScore = TNumericLimits<double>::Max();
-	for (const FHuntStopClip& Clip : CrossedStopClips)
+	const bool bAimStance = ShootingLegsAlpha >= 0.5f;
+	for (const FHuntStopClip& Clip : Clips)
 	{
 		const double Score = FVector2D::DistSquared(Clip.FootL, FootL) + FVector2D::DistSquared(Clip.FootR, FootR);
-		if (Clip.Anim && Clip.bMovingLeft == (Direction < 0.f) && Score < BestScore)
+		if (Clip.Anim && Clip.bMovingLeft == (Direction < 0.f) && Clip.bAimStance == bAimStance && Score < BestScore)
 		{
 			Best = &Clip;
 			BestScore = Score;
@@ -76,13 +95,11 @@ bool UHuntAnimInstance::TryPlayCrossedStop()
 	{
 		return false;
 	}
-	// 클립의 시작 속도(186)를 멈춤 진입 속도(약 150)에 맞춘다. 블렌드 아웃 시작 시간은 실제 시간 기준이라 재생 속도로 나눈다
-	constexpr float PlayRate = 0.8f;
-	// 디딘 발이 클립과 같은 자리에서 시작하도록 시작 시간을 맞춘다. 디딘 발은 몸 기준 이동 반대쪽으로 약 186cm/s로 움직인다
+	// 디딘 발이 클립과 같은 자리에서 시작하도록 시작 시간을 맞춘다. 디딘 발은 몸 기준 이동 반대쪽으로 ClipFootSpeed로 움직인다. 블렌드 아웃 시작 시간은 실제 시간 기준이라 재생 속도로 나눈다
 	const bool bLeftDown = FootLocalL.Z <= FootLocalR.Z;
 	const double ClipX = bLeftDown ? Best->FootL.X : Best->FootR.X;
 	const double GameX = bLeftDown ? FootL.X : FootR.X;
-	const float StartOffset = FMath::Clamp(static_cast<float>((Best->bMovingLeft ? ClipX - GameX : GameX - ClipX) / 186.0), -0.12f, 0.12f);
+	const float StartOffset = FMath::Clamp(static_cast<float>((Best->bMovingLeft ? ClipX - GameX : GameX - ClipX) / ClipFootSpeed), -0.12f, 0.12f);
 	CrossedStopMontage = PlaySlotAnimationAsDynamicMontage(Best->Anim, TEXT("DefaultSlot"), 0.15f, 0.25f, PlayRate, 1, (Best->Anim->GetPlayLength() - Best->EndTime) / PlayRate, Best->StartTime + StartOffset);
 	CrossedStopEndTime = Best->EndTime;
 	return CrossedStopMontage != nullptr;
@@ -114,7 +131,11 @@ void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
 {
 	// 서 있는 자세: 대기가 아니면(준비·조준) Lyra 사격 자세(왼발 앞), 대기면 ALS 기본자세(두 발 나란히)
 	// ABP Idle 하체는 전환 애니메이션(LegTransitionAnim)을 ShootingLegsTime으로 평가한다. 발 옮기기도 애니메이션에 들어 있다
-	ShootingLegsAlpha = FMath::FInterpConstantTo(ShootingLegsAlpha, Character->GetRelaxedBlend() < 0.5f ? 1.f : 0.f, DeltaSeconds, 1.f / LegStanceBlendTime);
+	// 마지막 한 걸음 클립이 블렌드 아웃까지 끝날 때는 클립을 고를 때의 자세로 착지한다. 그동안 자세가 바뀌면 전환 애니메이션이 클립에 가려져 발이 끌려간다
+	if (!CrossedStopMontage || !GetInstanceForMontage(CrossedStopMontage))
+	{
+		ShootingLegsAlpha = FMath::FInterpConstantTo(ShootingLegsAlpha, Character->GetRelaxedBlend() < 0.5f ? 1.f : 0.f, DeltaSeconds, 1.f / LegStanceBlendTime);
+	}
 	ShootingLegsTime = LegTransitionAnim ? ShootingLegsAlpha * LegTransitionAnim->GetPlayLength() : 0.f;
 	const bool bLegTransition = ShootingLegsAlpha > 0.f && ShootingLegsAlpha < 1.f;
 
@@ -209,7 +230,7 @@ void UHuntAnimInstance::UpdateVelocity(float DeltaSeconds)
 	const bool bWantsMove = GroundSpeed > 3.f && (bHasMovementInput || GroundSpeed > Character->GetStopBrakeSpeed());
 	const bool bWasClipActive = bCrossedStopActive;
 	bCrossedStopActive = CrossedStopMontage && Montage_IsActive(CrossedStopMontage) && Montage_GetPosition(CrossedStopMontage) < CrossedStopEndTime;
-	if (bShouldMove && !bWantsMove && !bCrossedStopActive && TryPlayCrossedStop())
+	if (bShouldMove && !bCrossedStopActive && ((!bHasMovementInput && TryPlayJogStop()) || (!bWantsMove && TryPlayCrossedStop())))
 	{
 		bCrossedStopActive = true;
 	}

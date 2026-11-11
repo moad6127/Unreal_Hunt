@@ -14,6 +14,8 @@ namespace
 	const FName FootBones[2] = {TEXT("foot_l"), TEXT("foot_r")};
 	// 서 있는 발의 높이(cm, 대기 자세 ik_foot Z). 발을 고정할 때 이 높이에 둔다
 	constexpr float StandingFootZ = 8.9f;
+	// 임시 진단용(방향 전환 때 몸 회전 지연 확인): hunt.LocoDebug 1이면 매 프레임 LOCOLOG를 찍는다. 원인 확인 뒤 지운다
+	TAutoConsoleVariable<int32> CVarLocoDebug(TEXT("hunt.LocoDebug"), 0, TEXT("1 = 이동·몸 회전·기울기 값을 매 프레임 로그로 찍는다"));
 }
 
 void UHuntAnimInstance::NativeInitializeAnimation()
@@ -45,6 +47,26 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	UpdateAimPitch();
 	UpdateTurnInPlace(DeltaSeconds);
 	UpdateFootLock(DeltaSeconds);
+
+	if (CVarLocoDebug.GetValueOnGameThread() > 0 && Character->IsLocallyControlled())
+	{
+		const FVector Input = Character->GetCharacterMovement()->GetCurrentAcceleration();
+		const float InputDirection = Input.IsNearlyZero() ? 0.f : FRotator::NormalizeAxis(Input.Rotation().Yaw - Character->GetActorRotation().Yaw);
+		// 실제 기울기 확인용: 골반에서 머리까지의 수평 오프셋(메시 컴포넌트 공간 cm, 지난 프레임 최종 포즈)
+		const USkeletalMeshComponent* Mesh = GetOwningComponent();
+		const FVector HeadOffset = Mesh->GetComponentTransform().InverseTransformVector(Mesh->GetBoneLocation(TEXT("head")) - Mesh->GetBoneLocation(TEXT("pelvis")));
+		// 어깨·골반이 실제로 얼마나 도는지: 좌우 뼈를 잇는 선의 Yaw(컴포넌트 공간, 정면이면 0)
+		auto LineYaw = [Mesh](const TCHAR* Left, const TCHAR* Right)
+		{
+			const FVector Line = Mesh->GetComponentTransform().InverseTransformVector(Mesh->GetBoneLocation(Left) - Mesh->GetBoneLocation(Right));
+			return FMath::RadiansToDegrees(FMath::Atan2(Line.Y, Line.X));
+		};
+		UE_LOG(LogTemp, Log, TEXT("LOCOLOG shoulderYaw=%.1f pelvisYaw=%.1f layerSpine=%.2f headX=%.1f headY=%.1f t=%.3f spd=%.0f velDir=%.0f inDir=%.0f yawTgt=%.1f rootYaw=%.1f dir=%.0f fwdDir=%.0f back=%d leanFB=%.2f leanLR=%.2f leanA=%.2f relaxed=%.2f gait=%.2f spineAdd=%.2f armRAdd=%.2f"),
+			LineYaw(TEXT("upperarm_l"), TEXT("upperarm_r")), LineYaw(TEXT("thigh_l"), TEXT("thigh_r")), GetCurveValue(TEXT("Layering_Spine")),
+			HeadOffset.X, HeadOffset.Y, GetWorld()->GetTimeSeconds(), GroundSpeed, VelocityDirection, InputDirection, GetMoveYawOffset(), RootYawOffset,
+			Direction, ForwardDirection, bMovingBackward ? 1 : 0, LeanFB, LeanLR, LeanAlpha, RelaxedAlpha,
+			GetCurveValue(TEXT("Weight_Gait")), GetCurveValue(TEXT("Layering_Spine_Add")), GetCurveValue(TEXT("Layering_Arm_R_Add")));
+	}
 }
 
 bool UHuntAnimInstance::TryPlayCrossedStop()
@@ -360,11 +382,6 @@ void UHuntAnimInstance::UpdateWeapon()
 	WallBlockAlpha = Character->GetWallBlockAlpha() * (1.f - SprintAlpha);
 	RelaxedAlpha = Character->GetRelaxedBlend() * (1.f - SprintAlpha);
 	AimOffsetAlpha = 1.f - RelaxedAlpha;
-	// Layering 부위 가중치(ABP_Hunt_ThirdPerson_Layered)
-	const float ReadySpine = FMath::GetMappedRangeValueClamped(ReadySpineFadeSpeed, FVector2D(ReadySpineAdd, 0.f), GroundSpeed);
-	const float RelaxedSpine = FMath::GetMappedRangeValueClamped(FVector2D(WalkAnimSpeed, JogAnimSpeed), FVector2D(RelaxedSpineAdd, RelaxedJogSpineAdd), GroundSpeed);
-	SpineAddAlpha = FMath::Lerp(ReadySpine, RelaxedSpine, RelaxedAlpha);
-	ArmRAddAlpha = RelaxedArmRAdd * RelaxedAlpha;
 	LeftHandIKAlpha = bHasWeapon ? 1.f : 0.f;
 	if (bHasWeapon)
 	{

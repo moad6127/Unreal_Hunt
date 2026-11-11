@@ -268,34 +268,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	FVector2D SprintBlendSpeed = FVector2D(400.f, 550.f);
 
-	// ABP Layering(ALS LayerBlending) 부위별 걸음 흔들림 가중치: 상체 = Overlay ⊕ (Base ⊖ ALS_N_Pose) × 가중치
-	// 척추·머리(spine_01 레이어가 목까지 덮음). 준비·조준 값과 대기 값을 RelaxedAlpha로 섞는다
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Layering")
-	float SpineAddAlpha = 0.f;
-
-	// 오른팔(clavicle_r 레이어, 로컬 공간)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Layering")
-	float ArmRAddAlpha = 0.f;
-
-	// 준비·조준: 이 값에서 시작해 속도가 ReadySpineFadeSpeed 구간을 지나며 0이 된다(총을 겨눈 상체가 흔들리지 않게)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float ReadySpineAdd = 0.4f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering")
-	FVector2D ReadySpineFadeSpeed = FVector2D(300.f, 600.f);
-
-	// 대기: 걷기(WalkAnimSpeed)에서 RelaxedSpineAdd(ALS 걷기 실측 1.0), Jog(JogAnimSpeed)에서 RelaxedJogSpineAdd
-	// 1.0이면 Jog에서 상체가 너무 숙고 흔들려 줄였다(11-08). ALS는 Jog에서도 1.0이다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float RelaxedSpineAdd = 1.f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float RelaxedJogSpineAdd = 0.4f;
-
-	// 대기 오른팔(ALS 걷기 실측 0.2~0.3, 왼팔은 0이라 없다). 준비·조준은 0
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Layering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float RelaxedArmRAdd = 0.3f;
-
 	// Lyra 에임 오프셋(총을 시선에 겨눔) 가중치 = 1 - RelaxedAlpha
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float AimOffsetAlpha = 1.f;

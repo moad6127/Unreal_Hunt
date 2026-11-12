@@ -77,9 +77,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bShouldMove = false;
 
-	// 몸 기준 이동 방향(-180~180). ForwardDirection·BackwardDirection과 멈춤 클립 선택에 쓴다
-	float Direction = 0.f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bIsFalling = false;
 
@@ -109,9 +106,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	float LeanLR = 0.f;
 
-	// 기울기 애디티브 가중치(걷기 0.5 → 조깅 1, ALS Weight_Gait 방식)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
-	float LeanAlpha = 0.f;
+	// 기울기 애디티브 가중치는 ABP가 Weight_Gait 커브로 정한다(걷기 1 → 0.5, 달리기 2 이상 → 1, ALS 방식)
 
 	// 기울기가 가속 변화를 따라가는 속도(ALS GroundedLeanInterpSpeed = 4)
 	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0"))
@@ -127,19 +122,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0", ClampMax = "45.0"))
 	float SideQuadrantHalfWidth = 10.f;
 
-	// 골반 방향을 바꿀 때 왼발이 오른발보다 캐릭터 기준 옆으로 이만큼(cm) 이상 왼쪽에 있는 순간을 기다린다(다리가 교차해 있는 동안에는 안 바꾼다)
-	// 서 있을 때 두 발 옆 간격은 약 36cm, 옆걸음에서 다리를 교차하면 음수가 된다
-	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0"))
-	float HipsSwitchFeetApart = 15.f;
-
-	// 위 순간을 기다리는 최대 시간(초). 걷기 한 주기(약 1.1초) 안에는 보통 그런 순간이 온다
+	// 골반 방향은 다리가 교차하지 않은 순간(이동 애니메이션의 Feet_Crossing 커브 = 0)에 바꾼다. 그 순간을 기다리는 최대 시간(초)
+	// 걷기 한 주기(약 1.1초) 안에는 보통 그런 순간이 온다
 	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0"))
 	float MaxHipsSwitchDelay = 1.f;
-
-	// 뒤에서 옆으로 왔거나 좌우를 바로 바꿔 뒷걸음 골반(LB/RB)으로 옆걸음할 때, 이만큼(초) 지나면 앞을 보는 옆걸음(LF/RF)으로 돌아간다
-	// ABP 앞↔뒤 전환 블렌드(0.5초)가 끝난 뒤가 되도록 맞춘다(ALS는 상태 가중치가 1이 된 뒤)
-	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "0.0"))
-	float HipsSettleTime = 0.5f;
 
 	// 걸음 상태(false = 걷기, true = 조깅·질주). ABP는 걷기용·조깅용 블렌드스페이스를 섞지 않고 이 값으로 바꿔 끼운다(관성 블렌딩)
 	// 걷기와 조깅을 한 블렌드스페이스 안에서 섞으면 중간 자세에서 다리가 모여 보이기 때문
@@ -166,20 +152,6 @@ protected:
 	// 다리가 몸 속도와 맞게 한다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	float LocomotionPlayRate = 1.f;
-
-	// 가장 빠른 이동 애니메이션 자체의 속도 = BS_Hunt_Loco_Fwd/Bwd의 최고 Speed 샘플 값 (정면 ALS 질주 / 옆·뒤 ALS 달리기)
-	// shortcut: 블렌드스페이스 샘플 값을 옮겨 적은 것, 샘플 속도를 바꾸면 여기도 맞춰야 한다
-	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
-	float ForwardRunAnimSpeed = 600.f;
-
-	// 조깅 샘플(ALS 달리기) 속도. 모든 방향이 같고, 옆·뒤의 최고 속도이기도 하다
-	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
-	float JogAnimSpeed = 350.f;
-
-	// 걷기 샘플(ALS 걷기) 속도. 모든 방향이 같다(ALS 원본 ABP의 걷기 기준 속도)
-	// shortcut: 블렌드스페이스 샘플 값을 옮겨 적은 것, 샘플 속도를 바꾸면 여기도 맞춰야 한다
-	UPROPERTY(EditDefaultsOnly, Category = "Locomotion", meta = (ClampMin = "1.0"))
-	float WalkAnimSpeed = 150.f;
 
 	// 제자리 회전(Lyra 방식): 서 있을 때 액터는 시선을 따라 돌지만 몸은 이만큼 반대로 돌려 제자리에 둔다
 	// ABP의 Rotate Root Bone(Yaw)에 넣는다. +면 몸이 시선보다 오른쪽을 보고 있다
@@ -211,18 +183,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
 	float TurnStartAngle = 50.f;
 
-	// 몸과 시선이 이 이상 벌어지면 몸이 바로 따라온다
-	// 에임 오프셋(AO_MM_Rifle_Idle_Hipfire) Yaw 범위가 ±90이라 그 이상이면 상체가 시선을 못 따라가 비틀려 보인다
-	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
-	float MaxRootYawOffset = 90.f;
-
 	// 몸과 시선 차이가 MaxRootYawOffset에 가까울수록 회전 애니메이션을 이 배율까지 빨리 재생한다 (빠르게 돌 때 몸이 끌려가지 않게)
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "1.0"))
 	float MaxTurnPlayRate = 1.75f;
-
-	// 회전이 끝난 뒤 다음 회전까지 쉬는 시간. ABP 회전 블렌드 시간(0.2초) 이상이어야 이전 회전이 다 빠진 뒤 새로 시작해 튀지 않는다
-	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
-	float TurnRetriggerDelay = 0.2f;
 
 	// 회전량 커브가 끝난 뒤(TurnYawWeight = 0) 회전 애니메이션을 이만큼(초) 더 재생해 발을 내려놓는 마무리까지 보여 준다(Lyra Turn Recovery)
 	// 그사이 몸과 시선이 다시 TurnStartAngle 이상 벌어지면 바로 끝내고 새로 돈다
@@ -231,7 +194,7 @@ protected:
 
 	// 움직이는 동안 몸이 목표 방향(시선 또는 아래 이동 방향 쪽)으로 돌아가는 속도
 	UPROPERTY(EditDefaultsOnly, Category = "TurnInPlace", meta = (ClampMin = "0.0"))
-	float RootYawBlendOutSpeed = 10.f;
+	float RootYawBlendOutSpeed = 5.f;
 
 	// 대기 자세로 걸을 때 몸(루트)을 이동 방향 쪽으로 돌리는 양(ALS YawOffset_FB/LR, 입력 = 시선 기준 이동 방향)
 	// FB: X = 앞 구역, Y = 뒤 구역. LR: X = 왼쪽 구역, Y = 오른쪽 구역. 상체는 시선 애디티브(AimYaw)가 시선으로 되돌린다
@@ -398,6 +361,8 @@ private:
 	float TimeSinceHipsSwitch = 0.f;
 	// 캐릭터 정면 기준 실제 이동 방향(-180~180). Direction은 여기서 몸이 돌아간 만큼(RootYawOffset)을 뺀 값
 	float VelocityDirection = 0.f;
+	// 몸 기준 이동 방향(-180~180). ForwardDirection·BackwardDirection과 멈춤 클립 선택에 쓴다
+	float Direction = 0.f;
 	// 회전 애니메이션의 RemainingTurnYaw(가중치로 나눈 값) 직전 프레임 값
 	float PrevTurnYawCurve = 0.f;
 	bool bTurnCurveActive = false;

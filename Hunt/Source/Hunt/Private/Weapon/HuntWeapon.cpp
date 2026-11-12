@@ -10,6 +10,20 @@
 #include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
 
+namespace
+{
+	// shortcut: AR4의 총구 뼈 이름, 뼈 이름이 다른 총이 생기면 WeaponDefinition으로 옮긴다
+	const FName MuzzleBoneName(TEXT("b_gun_muzzleflash"));
+	// 조준점을 찾는 카메라 트레이스 길이(cm). 아무것도 안 맞으면 이 거리의 점을 조준한다
+	constexpr float AimTraceDistance = 100000.f;
+	// 지향사격 왼손 소켓 (총 메시마다 추가)
+	const FName LeftHandSocketName(TEXT("Socket_LeftHand"));
+	// 조준 자세 애니메이션의 자연 그립 위치. 총에 없으면 지향사격 소켓을 그대로 쓴다
+	const FName LeftHandADSSocketName(TEXT("Socket_LeftHand_ADS"));
+	// 1인칭 그립 포즈의 왼손목(hand_l) 위치. 지향사격·조준 그립 포즈가 총 기준 같은 곳을 잡으므로 하나만 둔다
+	const FName FirstPersonLeftHandSocketName(TEXT("Socket_LeftHand_FP"));
+}
+
 AHuntWeapon::AHuntWeapon()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -25,10 +39,6 @@ void AHuntWeapon::OnConstruction(const FTransform& Transform)
 
 	// 레벨 배치·BP·스폰 모두 Definition의 메시를 따르도록 여기서 설정
 	Mesh->SetSkeletalMesh(Definition ? Definition->Mesh : nullptr);
-	if (Definition)
-	{
-		FireMode = Definition->FireMode;
-	}
 }
 
 FVector AHuntWeapon::GetLeftHandGripLocation(float AimAlpha) const
@@ -57,7 +67,7 @@ void AHuntWeapon::StartFire()
 	bFirstShot = true;
 
 	const double Remaining = LastFireTime + Definition->FireInterval - GetWorld()->GetTimeSeconds();
-	if (FireMode == EHuntFireMode::Single)
+	if (Definition->FireMode == EHuntFireMode::Single)
 	{
 		if (Remaining <= 0.0)
 		{

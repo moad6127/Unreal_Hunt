@@ -4,10 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Weapon/WeaponDefinition.h"
 #include "HuntWeapon.generated.h"
 
 class USkeletalMeshComponent;
+class UWeaponDefinition;
 
 UCLASS()
 class HUNT_API AHuntWeapon : public AActor
@@ -36,32 +36,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> Definition;
 
-	// 시작 값은 Definition->FireMode
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Weapon")
-	EHuntFireMode FireMode = EHuntFireMode::Single;
-
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<USkeletalMeshComponent> Mesh;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FName MuzzleBoneName = TEXT("b_gun_muzzleflash");
-
-	// 조준점을 찾는 카메라 트레이스 길이(cm). 아무것도 안 맞으면 이 거리의 점을 조준한다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	float AimTraceDistance = 100000.f;
-
-	// 지향사격 왼손 소켓 (총 메시마다 추가)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FName LeftHandSocketName = TEXT("Socket_LeftHand");
-
-	// 조준 자세 애니메이션의 자연 그립 위치. 총에 없으면 지향사격 소켓을 그대로 쓴다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FName LeftHandADSSocketName = TEXT("Socket_LeftHand_ADS");
-
-	// 1인칭 그립 포즈의 왼손목(hand_l) 위치. 지향사격·조준 그립 포즈가 총 기준 같은 곳을 잡으므로 하나만 둔다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FName FirstPersonLeftHandSocketName = TEXT("Socket_LeftHand_FP");
 
 private:
 	// 총구에서 크로스헤어가 가리키는 점을 향해, 현재 탄퍼짐 안에서 발사체를 쏜다

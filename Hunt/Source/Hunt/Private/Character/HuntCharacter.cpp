@@ -10,6 +10,18 @@
 #include "Weapon/HuntWeapon.h"
 #include "Weapon/WeaponDefinition.h"
 
+namespace
+{
+	// 카메라가 따라갈 뼈
+	const FName CameraHeadBone(TEXT("head"));
+	// 조준 시 화면 중앙에 올 총의 가늠자 소켓. 조준하는 동안 팔 전체를 옮겨 이 소켓을 시선 축 위에 둔다
+	const FName SightSocketName(TEXT("Socket_Sight"));
+	// 다른 사람이 보는 전신 손 소켓
+	const FName WeaponSocketName(TEXT("HandGrip_R"));
+	// 1인칭 팔에서 총을 붙일 뼈. LPSP 애니메이션은 총을 ik_hand_gun(SOCKET_Weapon)으로 움직이고 손은 그 총을 잡는다
+	const FName FirstPersonWeaponBone(TEXT("ik_hand_gun"));
+}
+
 AHuntCharacter::AHuntCharacter()
 {
 	// 카메라가 머리를 따라가도록 매 프레임 갱신. 애니 포즈가 끝난 뒤의 머리 위치를 쓰기 위해 PostPhysics
@@ -162,7 +174,7 @@ const UWeaponDefinition* AHuntCharacter::GetWeaponDefinition() const
 
 bool AHuntCharacter::CanSprint(float Angle) const
 {
-	return !bWantsToAim && bWantsToSprint && Angle <= SprintMaxAngle && WallBlockAlpha < 0.1f;
+	return Stance != EHuntWeaponStance::Aiming && bWantsToSprint && Angle <= SprintMaxAngle && WallBlockAlpha < 0.1f;
 }
 
 float AHuntCharacter::GetCurrentSpread() const
@@ -288,7 +300,7 @@ float AHuntCharacter::GetBaseSpeed(float Angle) const
 {
 	// 조준 중에는 걷기만(걷기 애니메이션 샘플 속도보다 느리면 제자리 걸음처럼 보인다), 질주는 정면 쪽으로 갈 때만
 	// 벽에 막혀 총을 내리면 질주하지 않는다(질주 상체 자세 위에 내린 자세가 겹치면 팔이 꺾인다)
-	if (bWantsToAim)
+	if (Stance == EHuntWeaponStance::Aiming)
 	{
 		return WalkSpeed;
 	}
@@ -334,7 +346,7 @@ void AHuntCharacter::UpdateAimAlpha(float DeltaSeconds)
 	// 조준 진행도: 총의 조준 시간 동안 일정하게 0↔1. 공중이거나 벽에 막혀 총을 내리면 조준이 풀리고, 버튼을 누르고 있으면 다시 조준한다
 	const UWeaponDefinition* Definition = GetWeaponDefinition();
 	const bool bCanAim = Definition && !GetCharacterMovement()->IsFalling() && WallBlockAlpha < 0.1f;
-	const float AimTarget = (bWantsToAim && bCanAim) ? 1.f : 0.f;
+	const float AimTarget = (Stance == EHuntWeaponStance::Aiming && bCanAim) ? 1.f : 0.f;
 	const float AimSpeed = Definition ? 1.f / Definition->AimDownSightsTime : 10.f;
 	AimAlpha = FMath::FInterpConstantTo(AimAlpha, AimTarget, DeltaSeconds, AimSpeed);
 }
@@ -548,13 +560,11 @@ void AHuntCharacter::StopFire()
 
 void AHuntCharacter::StartAim()
 {
-	bWantsToAim = true;
 	Stance = EHuntWeaponStance::Aiming;
 }
 
 void AHuntCharacter::StopAim()
 {
-	bWantsToAim = false;
 	Stance = EHuntWeaponStance::Ready;
 	ReadyTimeLeft = ReadyHoldTime;
 }

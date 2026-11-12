@@ -76,10 +76,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh")
 	TObjectPtr<USkeletalMeshComponent> FirstPersonLegs;
 
-	// 카메라가 따라갈 뼈
-	UPROPERTY(EditDefaultsOnly, Category = "Camera")
-	FName CameraHeadBone = TEXT("head");
-
 	// 머리 뼈에서 시선 방향으로 얼마나 앞에 둘지(cm). 아래를 볼 때 하체 메시의 허리 잘린 면이 보이면 늘린다
 	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "0.0"))
 	float CameraForwardOffset = 15.f;
@@ -87,10 +83,6 @@ protected:
 	// 머리 위치를 따라가는 속도. 낮을수록 흔들림이 줄고 반응이 느려진다 (0 = 즉시)
 	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "0.0"))
 	float CameraFollowSpeed = 15.f;
-
-	// 조준 시 화면 중앙에 올 총의 가늠자 소켓. 조준하는 동안 팔 전체를 옮겨 이 소켓을 시선 축 위에 둔다
-	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim")
-	FName SightSocketName = TEXT("Socket_Sight");
 
 	// 조준 시 시야각(가늠쇠 기준. 스코프 배율은 M3에서)
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim", meta = (ClampMin = "5.0", ClampMax = "170.0"))
@@ -209,14 +201,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> DefaultWeapon;
 
-	// 다른 사람이 보는 전신 손 소켓
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FName WeaponSocketName = TEXT("HandGrip_R");
-
-	// 1인칭 팔에서 총을 붙일 뼈. LPSP 애니메이션은 총을 ik_hand_gun(SOCKET_Weapon)으로 움직이고 손은 그 총을 잡는다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FName FirstPersonWeaponBone = TEXT("ik_hand_gun");
-
 	// ik_hand_gun 기준 총 위치(회전 없음). AR4 손잡이가 LPSP 손에 오도록 잰 값, 총 메시마다 다르다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	FVector FirstPersonWeaponOffset = FVector(-2.03f, -8.35f, -0.1f);
@@ -261,7 +245,7 @@ private:
 	float GetInputAngle(const FVector& InputDirection) const;
 	float GetDirectionSpeedScale(float Angle) const;
 	float GetBaseSpeed(float Angle) const;
-	// 이 입력 각도(정면 기준 0~180)로 질주할 수 있는지. 속도 계산과 출발 애니메이션 선택이 같은 조건을 쓴다
+	// 이 입력 각도(정면 기준 0~180)로 질주할 수 있는지
 	bool CanSprint(float Angle) const;
 	void ApproachMaxWalkSpeed(float TargetSpeed, float DeltaSeconds);
 
@@ -295,9 +279,6 @@ private:
 	// shortcut: 복제하지 않아 다른 플레이어에게는 걷기 상태로 보인다, 멀티 점검 때 달리기·질주 상태와 함께 복제
 	bool bRunGait = false;
 
-	// shortcut: 조준 상태를 복제하지 않아 다른 플레이어에게는 조준 자세가 안 보인다, 멀티 점검 때 복제 추가
-	bool bWantsToAim = false;
-
 	// 조준 진행도(0~1, 선형). 총의 AimDownSightsTime 동안 변한다
 	float AimAlpha = 0.f;
 
@@ -307,7 +288,8 @@ private:
 	// shortcut: 복제하지 않아 다른 플레이어에게는 총을 내린 자세가 안 보인다, 멀티 점검 때 조준 상태와 함께 복제
 	float WallBlockAlpha = 0.f;
 
-	// shortcut: 총 자세도 복제하지 않는다(다른 플레이어에게는 대기 자세로 보임), 멀티 점검 때 조준 상태와 함께 복제
+	// 조준 버튼을 누르고 있으면 Aiming
+	// shortcut: 총 자세를 복제하지 않는다(다른 플레이어에게는 대기 자세로 보이고 조준 자세가 안 보임), 멀티 점검 때 복제 추가
 	EHuntWeaponStance Stance = EHuntWeaponStance::Relaxed;
 
 	// 대기 자세로 총을 내린 정도(0~1, 선형). RaiseTime 동안 변한다

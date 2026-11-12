@@ -14,8 +14,22 @@ namespace
 	const FName FootBones[2] = {TEXT("foot_l"), TEXT("foot_r")};
 	// 서 있는 발의 높이(cm, 대기 자세 ik_foot Z). 발을 고정할 때 이 높이에 둔다
 	constexpr float StandingFootZ = 8.9f;
-	// 임시 진단용(방향 전환 때 몸 회전 지연 확인): hunt.LocoDebug 1이면 매 프레임 LOCOLOG를 찍는다. 원인 확인 뒤 지운다
-	TAutoConsoleVariable<int32> CVarLocoDebug(TEXT("hunt.LocoDebug"), 0, TEXT("1 = 이동·몸 회전·기울기 값을 매 프레임 로그로 찍는다"));
+
+	// 아래 값들은 에셋·ABP 설정과 맞물려 있어 따로 조절할 값이 아니다. 그쪽을 바꾸면 여기도 맞춘다
+	// 가장 빠른 이동 애니메이션 자체의 속도 = BS_Hunt_Loco_Fwd/Bwd의 최고 Speed 샘플 값 (정면 ALS 질주 / 옆·뒤 ALS 달리기)
+	constexpr float ForwardRunAnimSpeed = 600.f;
+	// 조깅 샘플(ALS 달리기) 속도. 모든 방향이 같고, 옆·뒤의 최고 속도이기도 하다
+	constexpr float JogAnimSpeed = 350.f;
+	// 걷기 샘플(ALS 걷기) 속도. 모든 방향이 같다(ALS 원본 ABP의 걷기 기준 속도)
+	constexpr float WalkAnimSpeed = 150.f;
+	// 뒤에서 옆으로 왔거나 좌우를 바로 바꿔 뒷걸음 골반(LB/RB)으로 옆걸음할 때, 이만큼(초) 지나면 앞을 보는 옆걸음(LF/RF)으로 돌아간다
+	// ABP Gait 앞↔뒤 전환 블렌드(0.5초)가 끝난 뒤가 되도록 맞춘다(ALS는 상태 가중치가 1이 된 뒤)
+	constexpr float HipsSettleTime = 0.5f;
+	// 몸과 시선이 이 이상 벌어지면 몸이 바로 따라온다
+	// 에임 오프셋(AO_MM_Rifle_Idle_Hipfire) Yaw 범위가 ±90이라 그 이상이면 상체가 시선을 못 따라가 비틀려 보인다
+	constexpr float MaxRootYawOffset = 90.f;
+	// 회전이 끝난 뒤 다음 회전까지 쉬는 시간. ABP 회전 블렌드 시간(0.2초) 이상이어야 이전 회전이 다 빠진 뒤 새로 시작해 튀지 않는다
+	constexpr float TurnRetriggerDelay = 0.2f;
 }
 
 void UHuntAnimInstance::NativeInitializeAnimation()
@@ -47,26 +61,6 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	UpdateAimPitch();
 	UpdateTurnInPlace(DeltaSeconds);
 	UpdateFootLock(DeltaSeconds);
-
-	if (CVarLocoDebug.GetValueOnGameThread() > 0 && Character->IsLocallyControlled())
-	{
-		const FVector Input = Character->GetCharacterMovement()->GetCurrentAcceleration();
-		const float InputDirection = Input.IsNearlyZero() ? 0.f : FRotator::NormalizeAxis(Input.Rotation().Yaw - Character->GetActorRotation().Yaw);
-		// 실제 기울기 확인용: 골반에서 머리까지의 수평 오프셋(메시 컴포넌트 공간 cm, 지난 프레임 최종 포즈)
-		const USkeletalMeshComponent* Mesh = GetOwningComponent();
-		const FVector HeadOffset = Mesh->GetComponentTransform().InverseTransformVector(Mesh->GetBoneLocation(TEXT("head")) - Mesh->GetBoneLocation(TEXT("pelvis")));
-		// 어깨·골반이 실제로 얼마나 도는지: 좌우 뼈를 잇는 선의 Yaw(컴포넌트 공간, 정면이면 0)
-		auto LineYaw = [Mesh](const TCHAR* Left, const TCHAR* Right)
-		{
-			const FVector Line = Mesh->GetComponentTransform().InverseTransformVector(Mesh->GetBoneLocation(Left) - Mesh->GetBoneLocation(Right));
-			return FMath::RadiansToDegrees(FMath::Atan2(Line.Y, Line.X));
-		};
-		UE_LOG(LogTemp, Log, TEXT("LOCOLOG shoulderYaw=%.1f pelvisYaw=%.1f layerSpine=%.2f headX=%.1f headY=%.1f t=%.3f spd=%.0f velDir=%.0f inDir=%.0f yawTgt=%.1f rootYaw=%.1f dir=%.0f fwdDir=%.0f back=%d leanFB=%.2f leanLR=%.2f leanA=%.2f relaxed=%.2f gait=%.2f spineAdd=%.2f armRAdd=%.2f"),
-			LineYaw(TEXT("upperarm_l"), TEXT("upperarm_r")), LineYaw(TEXT("thigh_l"), TEXT("thigh_r")), GetCurveValue(TEXT("Layering_Spine")),
-			HeadOffset.X, HeadOffset.Y, GetWorld()->GetTimeSeconds(), GroundSpeed, VelocityDirection, InputDirection, GetMoveYawOffset(), RootYawOffset,
-			Direction, ForwardDirection, bMovingBackward ? 1 : 0, LeanFB, LeanLR, LeanAlpha, RelaxedAlpha,
-			GetCurveValue(TEXT("Weight_Gait")), GetCurveValue(TEXT("Layering_Spine_Add")), GetCurveValue(TEXT("Layering_Arm_R_Add")));
-	}
 }
 
 bool UHuntAnimInstance::TryPlayCrossedStop()
@@ -275,8 +269,6 @@ void UHuntAnimInstance::UpdateVelocity(float DeltaSeconds)
 		LeanLR = FMath::FInterpTo(LeanLR, Relative.Y, DeltaSeconds, LeanInterpSpeed);
 	}
 	PrevVelocity = Velocity;
-	// ALS는 걷기에서 절반, 달리기 이상에서 전부 기울인다(Weight_Gait 커브)
-	LeanAlpha = FMath::GetMappedRangeValueClamped(FVector2D(WalkAnimSpeed, JogAnimSpeed), FVector2D(0.5f, 1.f), GroundSpeed);
 }
 
 void UHuntAnimInstance::UpdateFoldedDirections(float DeltaSeconds)
@@ -355,16 +347,18 @@ void UHuntAnimInstance::UpdateMovingBackward(float DeltaSeconds)
 		bHipsBackwardTarget = false;
 	}
 
-	// 골반 방향은 두 발이 옆으로 벌어져 있을 때(왼발이 오른발보다 HipsSwitchFeetApart 이상 왼쪽, 즉 다리가 교차하지 않을 때)만 바꾼다
-	// ALS의 Feet_Crossing == 0과 같은 조건. 커브는 Hunt ABP에서 Move 상태 애디티브(Alpha 0.4→0)를 거쳐 줄어들어 쓸 수 없어 발 위치로 잰다
-	// 앞뒤 간격은 보지 않는다: 옆걸음에서 다리를 교차해 내딛는 순간에도 두 발은 앞뒤로 멀리 떨어져 있다
+	// 골반 방향은 다리가 교차하지 않을 때만 바꾼다(ALS와 같은 조건: 옆걸음 애니메이션의 Feet_Crossing 커브 = 0, 지난 프레임 최종 포즈 커브)
+	// 앞뒤 달리기와 Jog 앞쪽 옆걸음에는 이 커브가 없어(0) 바로 바뀐다
 	if (bHipsBackwardTarget == bMovingBackward)
 	{
 		HipsSwitchWaitTime = 0.f;
 		return;
 	}
 	HipsSwitchWaitTime += DeltaSeconds;
-	if (GetFeetSideGap() >= HipsSwitchFeetApart || HipsSwitchWaitTime >= MaxHipsSwitchDelay)
+	// 이동 방향이 반대 반구 깊숙이(정면·정뒤 ±45도 안) 들어갔으면 기다리지 않는다: 블렌드스페이스가 방향을 접어 읽어서,
+	// 기다리는 동안 반대 방향 걸음(문워크)이 나온다(11-10 로그: 뒤로 가는데 앞걸음 0.75초). 걷기 옆걸음에서 넘어올 때 커브가 아직 남아 있을 수 있다
+	const bool bDeepInTargetHemisphere = bHipsBackwardTarget ? AbsDirection > 135.f : AbsDirection < 45.f;
+	if (bDeepInTargetHemisphere || GetCurveValue(TEXT("Feet_Crossing")) < 0.01f || HipsSwitchWaitTime >= MaxHipsSwitchDelay)
 	{
 		bMovingBackward = bHipsBackwardTarget;
 		HipsSwitchWaitTime = 0.f;

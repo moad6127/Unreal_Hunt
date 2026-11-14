@@ -223,13 +223,21 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float RelaxedAlpha = 0.f;
 
-	// 질주 상체 블렌드(0~1, GroundSpeed가 SprintBlendSpeed 구간을 지나는 정도). ABP Overlay의 질주 블렌드와
+	// 내 화면에 그림자만 남는 전신(1인칭)의 RelaxedAlpha 배율. 전신 대기 자세(총을 비스듬히 듦)가 1인칭 대기 포즈(총 정면)와 달라 그림자가 어긋나는 것을 줄인다. 1 = 줄이지 않음
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float LocalShadowRelaxedScale = 0.3f;
+
+	// 질주 상체 블렌드(0~1). GroundSpeed가 SprintBlendSpeed 구간의 중간을 넘으면 1, 아니면 0으로 SprintBlendTime 동안 부드럽게(시작·끝 감속) 변한다
+	// 속도에 직접 묶으면 질주가 풀릴 때 상체가 감속(약 0.25초)을 따라 뚝 바뀐다. ABP Overlay의 질주 블렌드와
 	// 대기·벽 앞 내린 자세 가중치(질주 중에는 뺌)가 같이 쓴다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float SprintAlpha = 0.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	FVector2D SprintBlendSpeed = FVector2D(400.f, 550.f);
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (ClampMin = "0.01"))
+	float SprintBlendTime = 0.4f;
 
 	// Lyra 에임 오프셋(총을 시선에 겨눔) 가중치 = 1 - RelaxedAlpha
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
@@ -310,7 +318,9 @@ private:
 	void UpdateMovingBackward(float DeltaSeconds);
 	// 캐릭터 기준 옆으로 왼발이 오른발보다 왼쪽에 있는 거리(cm). 음수면 다리가 교차했다
 	float GetFeetSideGap() const;
-	void UpdateWeapon();
+	void UpdateWeapon(float DeltaSeconds);
+	// SprintAlpha의 감속 전 진행도(0~1, 일정 속도로 변함)
+	float SprintBlend = 0.f;
 	void UpdateAimPitch();
 
 	void UpdateTurnInPlace(float DeltaSeconds);

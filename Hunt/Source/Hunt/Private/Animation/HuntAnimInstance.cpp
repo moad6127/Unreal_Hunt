@@ -57,7 +57,7 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	UpdateFoldedDirections(DeltaSeconds);
 	UpdateGaitBlend();
 	UpdateMovingBackward(DeltaSeconds);
-	UpdateWeapon();
+	UpdateWeapon(DeltaSeconds);
 	UpdateAimPitch();
 	UpdateTurnInPlace(DeltaSeconds);
 	UpdateFootLock(DeltaSeconds);
@@ -366,15 +366,21 @@ void UHuntAnimInstance::UpdateMovingBackward(float DeltaSeconds)
 	}
 }
 
-void UHuntAnimInstance::UpdateWeapon()
+void UHuntAnimInstance::UpdateWeapon(float DeltaSeconds)
 {
 	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
 	const bool bHasWeapon = Weapon && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent();
 	AimAlpha = Character->GetAimBlend();
 	// 내린 자세 애디티브는 지향사격 상체 기준이라 질주 상체 자세 위에서는 뺀다
-	SprintAlpha = FMath::GetMappedRangeValueClamped(SprintBlendSpeed, FVector2D(0.f, 1.f), GroundSpeed);
+	const bool bSprinting = GroundSpeed > (SprintBlendSpeed.X + SprintBlendSpeed.Y) * 0.5f;
+	SprintBlend = FMath::FInterpConstantTo(SprintBlend, bSprinting ? 1.f : 0.f, DeltaSeconds, 1.f / SprintBlendTime);
+	SprintAlpha = FMath::SmoothStep(0.f, 1.f, SprintBlend);
 	WallBlockAlpha = Character->GetWallBlockAlpha() * (1.f - SprintAlpha);
 	RelaxedAlpha = Character->GetRelaxedBlend() * (1.f - SprintAlpha);
+	if (Character->IsLocallyControlled() && GetSkelMeshComponent()->FirstPersonPrimitiveType == EFirstPersonPrimitiveType::WorldSpaceRepresentation)
+	{
+		RelaxedAlpha *= LocalShadowRelaxedScale;
+	}
 	AimOffsetAlpha = 1.f - RelaxedAlpha;
 	LeftHandIKAlpha = bHasWeapon ? 1.f : 0.f;
 	if (bHasWeapon)
@@ -465,7 +471,8 @@ float UHuntAnimInstance::GetMoveYawOffset() const
 	// 방향을 빠르게 뒤집으면 속도가 0 근처를 지나며 속도 방향이 아무 값으로 튄다(입력이 있어 bShouldMove는 계속 true)
 	// 느릴 때는 오프셋을 줄여 그 방향을 따라 몸이 이리저리 돌지 않게 한다(50 → 걷기 속도에서 0 → 1)
 	const float SpeedWeight = FMath::GetMappedRangeValueClamped(FVector2D(50.f, WalkAnimSpeed), FVector2D(0.f, 1.f), GroundSpeed);
-	return Offset * RelaxedAlpha * SpeedWeight;
+	// RelaxedAlpha는 그림자용으로 줄었을 수 있어(LocalShadowRelaxedScale) 원래 값을 쓴다. 몸 방향은 1인칭 하체에 보인다
+	return Offset * Character->GetRelaxedBlend() * (1.f - SprintAlpha) * SpeedWeight;
 }
 
 void UHuntAnimInstance::AdvanceTurnTimers(float DeltaSeconds)

@@ -54,6 +54,7 @@ class HUNT_API UHuntAnimInstance : public UAnimInstance
 public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+	virtual void NativePostEvaluateAnimation() override;
 
 	// ABP Locomotion > Stop 안쪽 상태에 들어갈 때 오는 노티파이(ALS (N) Stop States). Lock = 디딘 발 고정, Plant = 공중 발을 디딘 포즈로 옮긴 뒤 고정
 	UFUNCTION()
@@ -333,6 +334,12 @@ private:
 	void EndTurn();
 
 	void UpdateFootLock(float DeltaSeconds);
+
+	// hunt.GunClipDebug 1: 전신 총이 몸(피직스 에셋)에 파고든 깊이를 매 프레임 GUNCLIP 로그로 남긴다(에디터 전용 측정 도구)
+	void LogGunClip();
+	// 총 메시 정점 일부(총 메시 기준). 처음 측정할 때 한 번 채운다
+	TArray<FVector> GunClipPoints;
+	TWeakObjectPtr<const USkeletalMesh> GunClipPointsMesh;
 
 	// 발 하나의 고정 상태. 0 = 왼발, 1 = 오른발
 	struct FFootLock

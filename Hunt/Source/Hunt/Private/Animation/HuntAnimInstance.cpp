@@ -8,6 +8,32 @@
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Curves/CurveVector.h"
+#include "HAL/IConsoleManager.h"
+#include "PhysicsEngine/PhysicsAsset.h"
+#include "PhysicsEngine/SkeletalBodySetup.h"
+#if WITH_EDITORONLY_DATA
+#include "Rendering/SkeletalMeshModel.h"
+#endif
+
+namespace
+{
+	TAutoConsoleVariable<int32> CVarGunClipDebug(TEXT("hunt.GunClipDebug"), 0,
+		TEXT("1 = 전신 총이 몸 피직스 바디에 파고든 깊이를 매 프레임 GUNCLIP 로그로 남긴다"));
+
+	// 점이 도형 표면 밖이면 +, 안이면 - (cm). 도형 기준 좌표의 점
+	float CapsuleSignedDistance(const FVector& P, float Radius, float Length)
+	{
+		const FVector OnAxis(0.f, 0.f, FMath::Clamp(P.Z, -Length * 0.5f, Length * 0.5f));
+		return FVector::Dist(P, OnAxis) - Radius;
+	}
+
+	float BoxSignedDistance(const FVector& P, const FVector& HalfExtent)
+	{
+		const FVector Q = P.GetAbs() - HalfExtent;
+		const FVector Outside(FMath::Max(Q.X, 0.f), FMath::Max(Q.Y, 0.f), FMath::Max(Q.Z, 0.f));
+		return Outside.Size() + FMath::Min(Q.GetMax(), 0.f);
+	}
+}
 
 namespace
 {
@@ -61,6 +87,108 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	UpdateAimPitch();
 	UpdateTurnInPlace(DeltaSeconds);
 	UpdateFootLock(DeltaSeconds);
+}
+
+void UHuntAnimInstance::NativePostEvaluateAnimation()
+{
+	Super::NativePostEvaluateAnimation();
+	if (Character && CVarGunClipDebug.GetValueOnGameThread() > 0)
+	{
+		LogGunClip();
+	}
+}
+
+void UHuntAnimInstance::LogGunClip()
+{
+#if WITH_EDITORONLY_DATA
+	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
+	USkeletalMeshComponent* Body = GetSkelMeshComponent();
+	const UPhysicsAsset* Physics = Body->GetPhysicsAsset();
+	if (!Weapon || !Physics || Weapon->GetRootComponent()->GetAttachParent() != Body)
+	{
+		return;
+	}
+	const USkeletalMesh* GunMesh = Weapon->GetMesh()->GetSkeletalMeshAsset();
+	if (GunClipPointsMesh.Get() != GunMesh)
+	{
+		// 정점이 수천 개라 고르게 약 400개만 쓴다(총 기준 좌표, 바인드 포즈)
+		GunClipPoints.Reset();
+		GunClipPointsMesh = GunMesh;
+		const FSkeletalMeshModel* Model = GunMesh ? GunMesh->GetImportedModel() : nullptr;
+		if (Model && Model->LODModels.Num() > 0)
+		{
+			int32 NumVerts = 0;
+			for (const FSkelMeshSection& Section : Model->LODModels[0].Sections)
+			{
+				NumVerts += Section.SoftVertices.Num();
+			}
+			const int32 Step = FMath::Max(1, NumVerts / 400);
+			int32 Index = 0;
+			for (const FSkelMeshSection& Section : Model->LODModels[0].Sections)
+			{
+				for (const FSoftSkinVertex& Vert : Section.SoftVertices)
+				{
+					if (Index++ % Step == 0)
+					{
+						GunClipPoints.Add(FVector(Vert.Position));
+					}
+				}
+			}
+		}
+	}
+
+	// 총은 소켓에 Snap으로 붙는다. 자식 컴포넌트 갱신 전이라 소켓에서 직접 계산한다
+	const FTransform GunToWorld = Body->GetSocketTransform(Weapon->GetRootComponent()->GetAttachSocketName());
+	FString Line;
+	float Worst = 0.f;
+	for (const USkeletalBodySetup* Setup : Physics->SkeletalBodySetups)
+	{
+		// 총을 쥔 손은 닿는 게 정상이다
+		if (!Setup || Setup->BoneName == TEXT("hand_l") || Setup->BoneName == TEXT("hand_r"))
+		{
+			continue;
+		}
+		const int32 BoneIndex = Body->GetBoneIndex(Setup->BoneName);
+		if (BoneIndex == INDEX_NONE)
+		{
+			continue;
+		}
+		const FTransform BoneToWorld = Body->GetBoneTransform(BoneIndex);
+		float Deepest = 0.f;
+		float DeepestGunY = 0.f;
+		for (const FVector& GunPoint : GunClipPoints)
+		{
+			const FVector P = BoneToWorld.InverseTransformPosition(GunToWorld.TransformPosition(GunPoint));
+			float D = TNumericLimits<float>::Max();
+			for (const FKSphylElem& E : Setup->AggGeom.SphylElems)
+			{
+				D = FMath::Min(D, CapsuleSignedDistance(E.GetTransform().InverseTransformPosition(P), E.Radius, E.Length));
+			}
+			for (const FKSphereElem& E : Setup->AggGeom.SphereElems)
+			{
+				D = FMath::Min(D, FVector::Dist(P, E.Center) - E.Radius);
+			}
+			for (const FKBoxElem& E : Setup->AggGeom.BoxElems)
+			{
+				D = FMath::Min(D, BoxSignedDistance(E.GetTransform().InverseTransformPosition(P), FVector(E.X, E.Y, E.Z) * 0.5f));
+			}
+			if (D < Deepest)
+			{
+				Deepest = D;
+				DeepestGunY = GunPoint.Y;
+			}
+		}
+		// 0.5cm 넘게 들어간 바디만. 깊이(cm)@가장 깊은 점의 총 Y(작을수록 개머리판 쪽, 클수록 총구 쪽)
+		if (Deepest < -0.5f)
+		{
+			Line += FString::Printf(TEXT(" %s=%.1f@%.0f"), *Setup->BoneName.ToString(), -Deepest, DeepestGunY);
+			Worst = FMath::Max(Worst, -Deepest);
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("GUNCLIP %s local=%d t=%.3f spd=%.0f relax=%.2f aim=%.2f sprint=%.2f wall=%.2f worst=%.1f |%s"),
+		*Character->GetName(), Character->IsLocallyControlled() ? 1 : 0, GetWorld()->GetTimeSeconds(), GroundSpeed,
+		RelaxedAlpha, AimAlpha, SprintAlpha, WallBlockAlpha, Worst, *Line);
+#endif
 }
 
 bool UHuntAnimInstance::TryPlayCrossedStop()

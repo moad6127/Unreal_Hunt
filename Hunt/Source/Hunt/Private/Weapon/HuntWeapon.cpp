@@ -126,11 +126,7 @@ FVector AHuntWeapon::GetAimDirection(const APawn* OwnerPawn, const FVector& Muzz
 	GetOwnerViewPoint(OwnerPawn, ViewLocation, ViewRotation);
 
 	const FVector ViewDirection = ViewRotation.Vector();
-	const FVector TraceEnd = ViewLocation + ViewDirection * AimTraceDistance;
-	FHitResult Hit;
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(HuntWeaponAim), false, OwnerPawn);
-	Params.AddIgnoredActor(this);
-	const FVector AimPoint = GetWorld()->LineTraceSingleByChannel(Hit, ViewLocation, TraceEnd, ECC_Visibility, Params) ? Hit.ImpactPoint : TraceEnd;
+	const FVector AimPoint = GetAimPoint(OwnerPawn, ViewLocation, ViewDirection);
 
 	// 벽에 붙어 총구가 조준점보다 앞에 나가 있으면 뒤로 쏘지 않도록 시선 방향을 쓴다
 	const FVector Direction = (AimPoint - MuzzleLocation).GetSafeNormal();
@@ -141,6 +137,16 @@ FVector AHuntWeapon::GetAimDirection(const APawn* OwnerPawn, const FVector& Muzz
 	const AHuntCharacter* Character = Cast<AHuntCharacter>(OwnerPawn);
 	const float WallBlockAlpha = Character ? Character->GetWeaponLowerAlpha() : 0.f;
 	return FMath::Lerp(AimDirection, Mesh->GetRightVector(), WallBlockAlpha).GetSafeNormal();
+}
+
+FVector AHuntWeapon::GetAimPoint(const APawn* OwnerPawn, const FVector& ViewLocation, const FVector& ViewDirection) const
+{
+	// 카메라 중앙 트레이스가 맞은 곳. 아무것도 안 맞으면 AimTraceDistance 앞의 점
+	const FVector TraceEnd = ViewLocation + ViewDirection * AimTraceDistance;
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(HuntWeaponAim), false, OwnerPawn);
+	Params.AddIgnoredActor(this);
+	return GetWorld()->LineTraceSingleByChannel(Hit, ViewLocation, TraceEnd, ECC_Visibility, Params) ? Hit.ImpactPoint : TraceEnd;
 }
 
 FVector AHuntWeapon::GetSpawnLocation(const APawn* OwnerPawn) const

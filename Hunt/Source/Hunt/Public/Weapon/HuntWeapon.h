@@ -45,6 +45,8 @@ private:
 	void Shoot();
 	// 카메라 중앙 트레이스로 조준점을 구해 총구에서 그 점을 향하는 방향
 	FVector GetAimDirection(const APawn* OwnerPawn, const FVector& MuzzleLocation) const;
+	// 카메라 중앙 트레이스로 찾은 조준점
+	FVector GetAimPoint(const APawn* OwnerPawn, const FVector& ViewLocation, const FVector& ViewDirection) const;
 	// 탄이 생겨날 위치. 벽에 붙어 총구가 벽 너머에 있으면 카메라와 총구 사이의 벽 앞으로 당긴다
 	FVector GetSpawnLocation(const APawn* OwnerPawn) const;
 	// 플레이어는 실제 카메라 위치·방향, 컨트롤러가 없으면 폰의 눈 위치

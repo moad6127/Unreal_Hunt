@@ -8,32 +8,6 @@
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Curves/CurveVector.h"
-#include "HAL/IConsoleManager.h"
-#include "PhysicsEngine/PhysicsAsset.h"
-#include "PhysicsEngine/SkeletalBodySetup.h"
-#if WITH_EDITORONLY_DATA
-#include "Rendering/SkeletalMeshModel.h"
-#endif
-
-namespace
-{
-	TAutoConsoleVariable<int32> CVarGunClipDebug(TEXT("hunt.GunClipDebug"), 0,
-		TEXT("1 = 전신 총이 몸 피직스 바디에 파고든 깊이를 매 프레임 GUNCLIP 로그로 남긴다"));
-
-	// 점이 도형 표면 밖이면 +, 안이면 - (cm). 도형 기준 좌표의 점
-	float CapsuleSignedDistance(const FVector& P, float Radius, float Length)
-	{
-		const FVector OnAxis(0.f, 0.f, FMath::Clamp(P.Z, -Length * 0.5f, Length * 0.5f));
-		return FVector::Dist(P, OnAxis) - Radius;
-	}
-
-	float BoxSignedDistance(const FVector& P, const FVector& HalfExtent)
-	{
-		const FVector Q = P.GetAbs() - HalfExtent;
-		const FVector Outside(FMath::Max(Q.X, 0.f), FMath::Max(Q.Y, 0.f), FMath::Max(Q.Z, 0.f));
-		return Outside.Size() + FMath::Min(Q.GetMax(), 0.f);
-	}
-}
 
 namespace
 {
@@ -56,6 +30,39 @@ namespace
 	constexpr float MaxRootYawOffset = 90.f;
 	// 회전이 끝난 뒤 다음 회전까지 쉬는 시간. ABP 회전 블렌드 시간(0.2초) 이상이어야 이전 회전이 다 빠진 뒤 새로 시작해 튀지 않는다
 	constexpr float TurnRetriggerDelay = 0.2f;
+	// 기울기가 가속 변화를 따라가는 속도(ALS GroundedLeanInterpSpeed = 4)
+	constexpr float LeanInterpSpeed = 4.f;
+	// 블렌드스페이스에 넣는 방향(Direction)이 실제 이동 방향을 따라가는 속도(ALS VelocityBlendInterpSpeed = 12). 0이면 바로
+	// 높이면 반응이 빨라지고, 낮추면 방향을 바꿀 때 다리가 부드럽지만 바꾼 직후 발이 잠깐 미끄러진다
+	constexpr float DirectionInterpSpeed = 12.f;
+	// 옆 구역의 반폭(도): 90±이 값 안에서는 골반 방향(앞/뒤 블렌드스페이스)을 바꾸지 않는다(ALS 방식)
+	// 넓히면 방향을 자주 바꿔도 골반이 덜 돌지만, 블렌드스페이스가 반대 반구를 접어 읽는 만큼(최대 2배) 발이 앞뒤로 미끄러진다
+	constexpr float SideQuadrantHalfWidth = 10.f;
+	// 골반 방향은 다리가 교차하지 않은 순간(이동 애니메이션의 Feet_Crossing 커브 = 0)에 바꾼다. 그 순간을 기다리는 최대 시간(초)
+	// 걷기 한 주기(약 1.1초) 안에는 보통 그런 순간이 온다
+	constexpr float MaxHipsSwitchDelay = 1.f;
+	// 걷기·조깅 재생 속도 하한. 너무 느리게 재생하면 슬로모션처럼 보인다
+	constexpr float MinPlayRate = 0.85f;
+	// ALS 회전은 다 도는 데 1.17초로 Lyra(0.63초)보다 느려, 계속 돌아볼 때 회전이 끝나기 전에 몸이 시선에 끌려간다. 이 배율로 빨리 재생한다
+	constexpr float RelaxedTurnPlayRate = 1.6f;
+	// 몸과 시선 차이가 이 각도를 넘으면 회전 애니메이션을 시작한다
+	constexpr float TurnStartAngle = 50.f;
+	// 몸과 시선 차이가 MaxRootYawOffset에 가까울수록 회전 애니메이션을 이 배율까지 빨리 재생한다 (빠르게 돌 때 몸이 끌려가지 않게)
+	constexpr float MaxTurnPlayRate = 1.75f;
+	// 회전량 커브가 끝난 뒤(TurnYawWeight = 0) 회전 애니메이션을 이만큼(초) 더 재생해 발을 내려놓는 마무리까지 보여 준다(Lyra Turn Recovery)
+	// 그사이 몸과 시선이 다시 TurnStartAngle 이상 벌어지면 바로 끝내고 새로 돈다
+	constexpr float TurnRecoveryTime = 0.5f;
+	// 움직이는 동안 몸이 목표 방향(시선 또는 아래 이동 방향 쪽)으로 돌아가는 속도
+	constexpr float RootYawBlendOutSpeed = 5.f;
+	// 내 화면에 그림자만 남는 전신(1인칭)의 RelaxedAlpha 배율. 전신 대기 자세(총을 비스듬히 듦)가 1인칭 대기 포즈(총 정면)와 달라 그림자가 어긋나는 것을 줄인다. 1 = 줄이지 않음
+	constexpr float LocalShadowRelaxedScale = 0.3f;
+	// 질주 상체 블렌드: 속도가 이 구간의 중간을 넘으면 SprintBlendTime 동안 질주 상체로 바뀐다
+	const FVector2D SprintBlendSpeed = FVector2D(400.f, 550.f);
+	constexpr float SprintBlendTime = 0.4f;
+	// 서 있는 하체가 두 자세 사이를 바꾸는 시간(초) = 전환 애니메이션 재생 시간
+	constexpr float LegStanceBlendTime = 0.4f;
+	// 움직이기 시작할 때 고정을 푸는 시간(초)
+	constexpr float FootUnlockTime = 0.15f;
 }
 
 void UHuntAnimInstance::NativeInitializeAnimation()
@@ -79,116 +86,27 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		return;
 	}
 
-	UpdateVelocity(DeltaSeconds);
+	UpdateVelocity();
+	UpdateShouldMove();
+	UpdateLean(DeltaSeconds);
 	UpdateFoldedDirections(DeltaSeconds);
 	UpdateGaitBlend();
 	UpdateMovingBackward(DeltaSeconds);
-	UpdateWeapon(DeltaSeconds);
+	UpdateSprintBlend(DeltaSeconds);
+	UpdateStanceAlphas();
+	UpdateLeftHandIK();
 	UpdateAimPitch();
 	UpdateTurnInPlace(DeltaSeconds);
+	UpdateLegStance(DeltaSeconds);
+	UpdatePlantTimes();
 	UpdateFootLock(DeltaSeconds);
 }
 
-void UHuntAnimInstance::NativePostEvaluateAnimation()
+FVector UHuntAnimInstance::GetFootLocal(int32 Side) const
 {
-	Super::NativePostEvaluateAnimation();
-	if (Character && CVarGunClipDebug.GetValueOnGameThread() > 0)
-	{
-		LogGunClip();
-	}
-}
-
-void UHuntAnimInstance::LogGunClip()
-{
-#if WITH_EDITORONLY_DATA
-	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
-	USkeletalMeshComponent* Body = GetSkelMeshComponent();
-	const UPhysicsAsset* Physics = Body->GetPhysicsAsset();
-	if (!Weapon || !Physics || Weapon->GetRootComponent()->GetAttachParent() != Body)
-	{
-		return;
-	}
-	const USkeletalMesh* GunMesh = Weapon->GetMesh()->GetSkeletalMeshAsset();
-	if (GunClipPointsMesh.Get() != GunMesh)
-	{
-		// 정점이 수천 개라 고르게 약 400개만 쓴다(총 기준 좌표, 바인드 포즈)
-		GunClipPoints.Reset();
-		GunClipPointsMesh = GunMesh;
-		const FSkeletalMeshModel* Model = GunMesh ? GunMesh->GetImportedModel() : nullptr;
-		if (Model && Model->LODModels.Num() > 0)
-		{
-			int32 NumVerts = 0;
-			for (const FSkelMeshSection& Section : Model->LODModels[0].Sections)
-			{
-				NumVerts += Section.SoftVertices.Num();
-			}
-			const int32 Step = FMath::Max(1, NumVerts / 400);
-			int32 Index = 0;
-			for (const FSkelMeshSection& Section : Model->LODModels[0].Sections)
-			{
-				for (const FSoftSkinVertex& Vert : Section.SoftVertices)
-				{
-					if (Index++ % Step == 0)
-					{
-						GunClipPoints.Add(FVector(Vert.Position));
-					}
-				}
-			}
-		}
-	}
-
-	// 총은 소켓에 Snap으로 붙는다. 자식 컴포넌트 갱신 전이라 소켓에서 직접 계산한다
-	const FTransform GunToWorld = Body->GetSocketTransform(Weapon->GetRootComponent()->GetAttachSocketName());
-	FString Line;
-	float Worst = 0.f;
-	for (const USkeletalBodySetup* Setup : Physics->SkeletalBodySetups)
-	{
-		// 총을 쥔 손은 닿는 게 정상이다
-		if (!Setup || Setup->BoneName == TEXT("hand_l") || Setup->BoneName == TEXT("hand_r"))
-		{
-			continue;
-		}
-		const int32 BoneIndex = Body->GetBoneIndex(Setup->BoneName);
-		if (BoneIndex == INDEX_NONE)
-		{
-			continue;
-		}
-		const FTransform BoneToWorld = Body->GetBoneTransform(BoneIndex);
-		float Deepest = 0.f;
-		float DeepestGunY = 0.f;
-		for (const FVector& GunPoint : GunClipPoints)
-		{
-			const FVector P = BoneToWorld.InverseTransformPosition(GunToWorld.TransformPosition(GunPoint));
-			float D = TNumericLimits<float>::Max();
-			for (const FKSphylElem& E : Setup->AggGeom.SphylElems)
-			{
-				D = FMath::Min(D, CapsuleSignedDistance(E.GetTransform().InverseTransformPosition(P), E.Radius, E.Length));
-			}
-			for (const FKSphereElem& E : Setup->AggGeom.SphereElems)
-			{
-				D = FMath::Min(D, FVector::Dist(P, E.Center) - E.Radius);
-			}
-			for (const FKBoxElem& E : Setup->AggGeom.BoxElems)
-			{
-				D = FMath::Min(D, BoxSignedDistance(E.GetTransform().InverseTransformPosition(P), FVector(E.X, E.Y, E.Z) * 0.5f));
-			}
-			if (D < Deepest)
-			{
-				Deepest = D;
-				DeepestGunY = GunPoint.Y;
-			}
-		}
-		// 0.5cm 넘게 들어간 바디만. 깊이(cm)@가장 깊은 점의 총 Y(작을수록 개머리판 쪽, 클수록 총구 쪽)
-		if (Deepest < -0.5f)
-		{
-			Line += FString::Printf(TEXT(" %s=%.1f@%.0f"), *Setup->BoneName.ToString(), -Deepest, DeepestGunY);
-			Worst = FMath::Max(Worst, -Deepest);
-		}
-	}
-	UE_LOG(LogTemp, Log, TEXT("GUNCLIP %s local=%d t=%.3f spd=%.0f relax=%.2f aim=%.2f sprint=%.2f wall=%.2f worst=%.1f |%s"),
-		*Character->GetName(), Character->IsLocallyControlled() ? 1 : 0, GetWorld()->GetTimeSeconds(), GroundSpeed,
-		RelaxedAlpha, AimAlpha, SprintAlpha, WallBlockAlpha, Worst, *Line);
-#endif
+	// 컴포넌트 공간 발 위치(+X = 캐릭터 왼쪽). 지난 프레임 최종 포즈 기준
+	const USkeletalMeshComponent* Mesh = GetOwningComponent();
+	return Mesh->GetComponentTransform().InverseTransformPosition(Mesh->GetBoneLocation(FootBones[Side]));
 }
 
 bool UHuntAnimInstance::TryPlayCrossedStop()
@@ -210,19 +128,9 @@ bool UHuntAnimInstance::TryPlayJogStop()
 	return TryPlayStopClip(JogStopClips, FMath::Clamp(GroundSpeed / 350.f, 0.6f, 1.f), 350.f);
 }
 
-bool UHuntAnimInstance::TryPlayStopClip(const TArray<FHuntStopClip>& Clips, float PlayRate, float ClipFootSpeed)
+const FHuntStopClip* UHuntAnimInstance::FindStopClip(const TArray<FHuntStopClip>& Clips, const FVector2D& FootL, const FVector2D& FootR) const
 {
-	if (FMath::Abs(FMath::Abs(Direction) - 90.f) > 45.f || !Character->GetCharacterMovement()->IsMovingOnGround())
-	{
-		return false;
-	}
-	const USkeletalMeshComponent* Mesh = GetOwningComponent();
-	const FTransform& MeshTransform = Mesh->GetComponentTransform();
-	const FVector FootLocalL = MeshTransform.InverseTransformPosition(Mesh->GetBoneLocation(FootBones[0]));
-	const FVector FootLocalR = MeshTransform.InverseTransformPosition(Mesh->GetBoneLocation(FootBones[1]));
-	const FVector2D FootL(FootLocalL);
-	const FVector2D FootR(FootLocalR);
-
+	// 이동 방향·자세가 같은 클립 중 시작 발 위치가 지금 발과 가장 가까운 것
 	const FHuntStopClip* Best = nullptr;
 	double BestScore = TNumericLimits<double>::Max();
 	const bool bAimStance = ShootingLegsAlpha >= 0.5f;
@@ -235,6 +143,20 @@ bool UHuntAnimInstance::TryPlayStopClip(const TArray<FHuntStopClip>& Clips, floa
 			BestScore = Score;
 		}
 	}
+	return Best;
+}
+
+bool UHuntAnimInstance::TryPlayStopClip(const TArray<FHuntStopClip>& Clips, float PlayRate, float ClipFootSpeed)
+{
+	if (FMath::Abs(FMath::Abs(Direction) - 90.f) > 45.f || !Character->GetCharacterMovement()->IsMovingOnGround())
+	{
+		return false;
+	}
+	const FVector FootLocalL = GetFootLocal(0);
+	const FVector FootLocalR = GetFootLocal(1);
+	const FVector2D FootL(FootLocalL);
+	const FVector2D FootR(FootLocalR);
+	const FHuntStopClip* Best = FindStopClip(Clips, FootL, FootR);
 	if (!Best)
 	{
 		return false;
@@ -271,7 +193,7 @@ void UHuntAnimInstance::AnimNotify_HuntStopLockR() { RequestStopFoot(1, false); 
 void UHuntAnimInstance::AnimNotify_HuntStopPlantL() { RequestStopFoot(0, true); }
 void UHuntAnimInstance::AnimNotify_HuntStopPlantR() { RequestStopFoot(1, true); }
 
-void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
+void UHuntAnimInstance::UpdateLegStance(float DeltaSeconds)
 {
 	// 서 있는 자세: 대기가 아니면(준비·조준) Lyra 사격 자세(왼발 앞), 대기면 ALS 기본자세(두 발 나란히)
 	// ABP Idle 하체는 전환 애니메이션(LegTransitionAnim)을 ShootingLegsTime으로 평가한다. 발 옮기기도 애니메이션에 들어 있다
@@ -281,17 +203,10 @@ void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
 		ShootingLegsAlpha = FMath::FInterpConstantTo(ShootingLegsAlpha, Character->GetRelaxedBlend() < 0.5f ? 1.f : 0.f, DeltaSeconds, 1.f / LegStanceBlendTime);
 	}
 	ShootingLegsTime = LegTransitionAnim ? ShootingLegsAlpha * LegTransitionAnim->GetPlayLength() : 0.f;
-	const bool bLegTransition = ShootingLegsAlpha > 0.f && ShootingLegsAlpha < 1.f;
+}
 
-	// 제자리 회전 중이나 하체 전환 중에는 애니메이션이 발을 옮기므로 고정하지 않는다
-	// 마지막 한 걸음 클립 중에는 애니메이션이 발과 몸을 옮긴다. 이동 입력이 들어오면 바로 끊는다
-	const bool bCrossedStop = CrossedStopMontage && Montage_IsActive(CrossedStopMontage);
-	if (bCrossedStop && !Character->GetCharacterMovement()->GetCurrentAcceleration().IsNearlyZero())
-	{
-		Montage_Stop(0.2f, CrossedStopMontage);
-	}
-	const bool bStanding = !bShouldMove && !bIsFalling && TurnDirection == 0 && !bLegTransition && !bCrossedStop;
-
+void UHuntAnimInstance::UpdatePlantTimes()
+{
 	// ALS Plant 시간(초, 걷기 사이클 1.133초): {정면, 왼쪽, 오른쪽}. 뒷걸음과 앞걸음이 따로 있고, 사이 방향은 보간한다
 	static const float PlantSecondsL[2][3] = {{0.133f, 0.2f, 0.233f}, {0.133f, 0.133f, 0.233f}};
 	static const float PlantSecondsR[2][3] = {{0.7f, 0.8f, 0.766f}, {0.7f, 0.8f, 0.7f}};
@@ -301,72 +216,91 @@ void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
 	const int32 PlantSide = PlantDirection < 0.f ? 1 : 2;
 	PlantTimeL = FMath::Lerp(PlantSecondsL[PlantRow][0], PlantSecondsL[PlantRow][PlantSide], SideAlpha) / 1.133f;
 	PlantTimeR = FMath::Lerp(PlantSecondsR[PlantRow][0], PlantSecondsR[PlantRow][PlantSide], SideAlpha) / 1.133f;
+}
 
-	const USkeletalMeshComponent* Mesh = GetOwningComponent();
-	const FTransform& MeshTransform = Mesh->GetComponentTransform();
+void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
+{
+	// 제자리 회전 중이나 하체 전환 중에는 애니메이션이 발을 옮기므로 고정하지 않는다
+	// 마지막 한 걸음 클립 중에는 애니메이션이 발과 몸을 옮긴다. 이동 입력이 들어오면 바로 끊는다
+	const bool bLegTransition = ShootingLegsAlpha > 0.f && ShootingLegsAlpha < 1.f;
+	const bool bCrossedStop = CrossedStopMontage && Montage_IsActive(CrossedStopMontage);
+	if (bCrossedStop && !Character->GetCharacterMovement()->GetCurrentAcceleration().IsNearlyZero())
+	{
+		Montage_Stop(0.2f, CrossedStopMontage);
+	}
+	const bool bStanding = !bShouldMove && !bIsFalling && TurnDirection == 0 && !bLegTransition && !bCrossedStop;
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
-		FFootLock& Foot = Feet[Side];
-		FVector Target = Foot.LockedWorld;
-		const float FootLockCurve = GetCurveValue(Side == 0 ? TEXT("FootLock_L") : TEXT("FootLock_R"));
-		// Stop_Down의 FootLock 커브 +1: 아직 안 디딘 반대쪽 발을 지금 자리에 고정한다
-		if (bStanding && !Foot.bLocked && !Foot.bLockRequested && FootLockCurve >= 0.99f)
+		UpdateFootLockSide(Side, bStanding, DeltaSeconds);
+	}
+}
+
+void UHuntAnimInstance::UpdateFootLockSide(int32 Side, bool bStanding, float DeltaSeconds)
+{
+	const FTransform& MeshTransform = GetOwningComponent()->GetComponentTransform();
+	FFootLock& Foot = Feet[Side];
+	FVector Target = Foot.LockedWorld;
+	const float FootLockCurve = GetCurveValue(Side == 0 ? TEXT("FootLock_L") : TEXT("FootLock_R"));
+	// Stop_Down의 FootLock 커브 +1: 아직 안 디딘 반대쪽 발을 지금 자리에 고정한다
+	if (bStanding && !Foot.bLocked && !Foot.bLockRequested && FootLockCurve >= 0.99f)
+	{
+		Foot.bLockRequested = true;
+		Foot.LockDelay = 0.f;
+	}
+	// 고정은 ABP Stop 상태의 노티파이가 요청한다(ALS (N) Stop States). Plant는 다리가 디딘 포즈로 옮겨진 뒤에 고정한다
+	if (Foot.bLockRequested)
+	{
+		Foot.LockDelay -= DeltaSeconds;
+	}
+	const bool bLockNow = Foot.bLockRequested && Foot.LockDelay <= 0.f;
+	if (!bStanding || (!Foot.bLocked && !bLockNow))
+	{
+		// 움직이기 시작하면 고정을 짧게 풀어 발이 순간 이동하지 않게 한다
+		Foot.bLocked = false;
+		Foot.bLockRequested = Foot.bLockRequested && bStanding;
+		Foot.Alpha = FMath::FInterpConstantTo(Foot.Alpha, 0.f, DeltaSeconds, 1.f / FootUnlockTime);
+	}
+	else if (!Foot.bLocked)
+	{
+		// 지금 자리(지난 프레임 최종 포즈)의 바닥 높이에 고정한다
+		FVector FootLocal = GetFootLocal(Side);
+		FootLocal.Z = StandingFootZ;
+		Foot.LockedWorld = MeshTransform.TransformPosition(FootLocal);
+		Foot.Alpha = 1.f;
+		Foot.bLocked = true;
+		Foot.bLockRequested = false;
+		Target = Foot.LockedWorld;
+	}
+	else
+	{
+		// ALS SetFootLocking: Stop_Down의 FootLock 커브(-1 = 풀림)만큼 고정을 푼다. 커브가 돌아오면 그 자리에 다시 고정한다
+		const float LockCurve = 1.f + FMath::Clamp(FootLockCurve, -1.f, 0.f);
+		if (LockCurve < Foot.Alpha)
 		{
+			Foot.Alpha = LockCurve;
+		}
+		else if (Foot.Alpha < 1.f && LockCurve >= 0.99f)
+		{
+			Foot.bLocked = false;
 			Foot.bLockRequested = true;
 			Foot.LockDelay = 0.f;
 		}
-		// 고정은 ABP Stop 상태의 노티파이가 요청한다(ALS (N) Stop States). Plant는 다리가 디딘 포즈로 옮겨진 뒤에 고정한다
-		if (Foot.bLockRequested)
-		{
-			Foot.LockDelay -= DeltaSeconds;
-		}
-		const bool bLockNow = Foot.bLockRequested && Foot.LockDelay <= 0.f;
-		if (!bStanding || (!Foot.bLocked && !bLockNow))
-		{
-			// 움직이기 시작하면 고정을 짧게 풀어 발이 순간 이동하지 않게 한다
-			Foot.bLocked = false;
-			Foot.bLockRequested = Foot.bLockRequested && bStanding;
-			Foot.Alpha = FMath::FInterpConstantTo(Foot.Alpha, 0.f, DeltaSeconds, 1.f / FootUnlockTime);
-		}
-		else if (!Foot.bLocked)
-		{
-			// 지금 자리(지난 프레임 최종 포즈)의 바닥 높이에 고정한다
-			FVector FootLocal = MeshTransform.InverseTransformPosition(Mesh->GetBoneLocation(FootBones[Side]));
-			FootLocal.Z = StandingFootZ;
-			Foot.LockedWorld = MeshTransform.TransformPosition(FootLocal);
-			Foot.Alpha = 1.f;
-			Foot.bLocked = true;
-			Foot.bLockRequested = false;
-			Target = Foot.LockedWorld;
-		}
-		else
-		{
-			// ALS SetFootLocking: Stop_Down의 FootLock 커브(-1 = 풀림)만큼 고정을 푼다. 커브가 돌아오면 그 자리에 다시 고정한다
-			const float LockCurve = 1.f + FMath::Clamp(FootLockCurve, -1.f, 0.f);
-			if (LockCurve < Foot.Alpha)
-			{
-				Foot.Alpha = LockCurve;
-			}
-			else if (Foot.Alpha < 1.f && LockCurve >= 0.99f)
-			{
-				Foot.bLocked = false;
-				Foot.bLockRequested = true;
-				Foot.LockDelay = 0.f;
-			}
-		}
-		(Side == 0 ? FootLockAlphaL : FootLockAlphaR) = Foot.Alpha;
-		(Side == 0 ? FootLockLocationL : FootLockLocationR) = MeshTransform.InverseTransformPosition(Target);
 	}
-
+	(Side == 0 ? FootLockAlphaL : FootLockAlphaR) = Foot.Alpha;
+	(Side == 0 ? FootLockLocationL : FootLockLocationR) = MeshTransform.InverseTransformPosition(Target);
 }
 
-void UHuntAnimInstance::UpdateVelocity(float DeltaSeconds)
+void UHuntAnimInstance::UpdateVelocity()
 {
 	const FVector Velocity = Character->GetVelocity();
 	GroundSpeed = Velocity.Size2D();
 	VelocityDirection = GroundSpeed > KINDA_SMALL_NUMBER ? FRotator::NormalizeAxis(Velocity.Rotation().Yaw - Character->GetActorRotation().Yaw) : 0.f;
 	// 이동 블렌드스페이스는 돌아간 몸 기준 방향으로 고른다(몸이 이동 방향 쪽으로 돌아가 있으면 옆걸음이 대각선 걸음이 된다)
 	Direction = GroundSpeed > KINDA_SMALL_NUMBER ? FRotator::NormalizeAxis(VelocityDirection - RootYawOffset) : 0.f;
+}
+
+void UHuntAnimInstance::UpdateShouldMove()
+{
 	// ALS ShouldMove 방식: 입력이 있거나 멈춤 속도(AHuntCharacter::StopBrakeSpeed, ALS 150)보다 빠르면 이동 중. 그 아래면 ABP Stop 상태로 간다
 	// 다른 플레이어 캐릭터(시뮬레이티드 프록시)는 입력(가속)을 모르므로 입력이 있는 것으로 보고 속도로만 판정한다
 	const bool bHasMovementInput = Character->GetLocalRole() == ROLE_SimulatedProxy
@@ -383,7 +317,11 @@ void UHuntAnimInstance::UpdateVelocity(float DeltaSeconds)
 	// 클립 중에는 ABP를 Move에 둔다. 클립이 섞여 들어오는 동안 아래 포즈가 Plant·Idle로 바뀌면 발이 밀리고 흔들린다
 	bShouldMove = bWantsMove || bCrossedStopActive;
 	bIsFalling = Character->GetCharacterMovement()->IsFalling();
+}
 
+void UHuntAnimInstance::UpdateLean(float DeltaSeconds)
+{
+	const FVector Velocity = Character->GetVelocity();
 	// 기울기(ALS CalculateRelativeAccelerationAmount + InterpLeanAmount): 속도 변화(가속)를 캐릭터 기준으로 바꿔
 	// 가속 중이면 최대 가속, 감속 중이면 최대 제동으로 나눈 비율(-1~1). ABP가 ALS_N_Lean 애디티브로 몸을 그쪽으로 기울인다
 	if (DeltaSeconds > KINDA_SMALL_NUMBER)
@@ -441,11 +379,7 @@ void UHuntAnimInstance::UpdateGaitBlend()
 float UHuntAnimInstance::GetFeetSideGap() const
 {
 	// 캐릭터 기준 옆 방향으로 왼발이 오른발보다 얼마나 왼쪽에 있는지(cm). 음수면 다리가 교차했다
-	// 메시 컴포넌트 공간 +X = 캐릭터 왼쪽. 지난 프레임 최종 포즈 기준
-	const USkeletalMeshComponent* Mesh = GetOwningComponent();
-	const FTransform& MeshTransform = Mesh->GetComponentTransform();
-	return MeshTransform.InverseTransformPosition(Mesh->GetBoneLocation(FootBones[0])).X
-		- MeshTransform.InverseTransformPosition(Mesh->GetBoneLocation(FootBones[1])).X;
+	return GetFootLocal(0).X - GetFootLocal(1).X;
 }
 
 void UHuntAnimInstance::UpdateMovingBackward(float DeltaSeconds)
@@ -494,15 +428,17 @@ void UHuntAnimInstance::UpdateMovingBackward(float DeltaSeconds)
 	}
 }
 
-void UHuntAnimInstance::UpdateWeapon(float DeltaSeconds)
+void UHuntAnimInstance::UpdateSprintBlend(float DeltaSeconds)
 {
-	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
-	const bool bHasWeapon = Weapon && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent();
-	AimAlpha = Character->GetAimBlend();
-	// 내린 자세 애디티브는 지향사격 상체 기준이라 질주 상체 자세 위에서는 뺀다
 	const bool bSprinting = GroundSpeed > (SprintBlendSpeed.X + SprintBlendSpeed.Y) * 0.5f;
 	SprintBlend = FMath::FInterpConstantTo(SprintBlend, bSprinting ? 1.f : 0.f, DeltaSeconds, 1.f / SprintBlendTime);
 	SprintAlpha = FMath::SmoothStep(0.f, 1.f, SprintBlend);
+}
+
+void UHuntAnimInstance::UpdateStanceAlphas()
+{
+	AimAlpha = Character->GetAimBlend();
+	// 내린 자세 애디티브는 지향사격 상체 기준이라 질주 상체 자세 위에서는 뺀다
 	WallBlockAlpha = Character->GetWallBlockAlpha() * (1.f - SprintAlpha);
 	RelaxedAlpha = Character->GetRelaxedBlend() * (1.f - SprintAlpha);
 	if (Character->IsLocallyControlled() && GetSkelMeshComponent()->FirstPersonPrimitiveType == EFirstPersonPrimitiveType::WorldSpaceRepresentation)
@@ -510,6 +446,12 @@ void UHuntAnimInstance::UpdateWeapon(float DeltaSeconds)
 		RelaxedAlpha *= LocalShadowRelaxedScale;
 	}
 	AimOffsetAlpha = 1.f - RelaxedAlpha;
+}
+
+void UHuntAnimInstance::UpdateLeftHandIK()
+{
+	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
+	const bool bHasWeapon = Weapon && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent();
 	LeftHandIKAlpha = bHasWeapon ? 1.f : 0.f;
 	if (bHasWeapon)
 	{

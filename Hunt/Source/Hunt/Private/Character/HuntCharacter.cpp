@@ -20,6 +20,53 @@ namespace
 	const FName WeaponSocketName(TEXT("HandGrip_R"));
 	// 1인칭 팔에서 총을 붙일 뼈. LPSP 애니메이션은 총을 ik_hand_gun(SOCKET_Weapon)으로 움직이고 손은 그 총을 잡는다
 	const FName FirstPersonWeaponBone(TEXT("ik_hand_gun"));
+
+	// 머리 뼈에서 시선 방향으로 얼마나 앞에 둘지(cm). 아래를 볼 때 하체 메시의 허리 잘린 면이 보이면 늘린다
+	constexpr float CameraForwardOffset = 15.f;
+	// 머리 위치를 따라가는 속도. 낮을수록 흔들림이 줄고 반응이 느려진다 (0 = 즉시)
+	constexpr float CameraFollowSpeed = 15.f;
+	// 총 킥이 목표 위치로 튀어 나가는 속도. 높을수록 한 발이 날카롭게 튄다
+	constexpr float KickSnapSpeed = 30.f;
+	// 무기 흔들림: 시선 회전 속도(도/초)에 곱해 총을 반대로 기울이는 비율
+	constexpr float SwayAmount = 0.02f;
+	// 흔들림 최대 각도(도)
+	constexpr float MaxSwayAngle = 10.f;
+	// 흔들림이 목표를 따라가고 제자리로 돌아오는 속도. 낮을수록 총이 늦게 따라온다
+	constexpr float SwayInterpSpeed = 8.f;
+	// 완전 조준 시 흔들림 비율 (가늠자가 화면 중앙에서 크게 벗어나지 않게)
+	constexpr float AimSwayScale = 0.4f;
+	// 사격을 멈춘 뒤 반동이 원래 조준점으로 돌아오는 속도. 높을수록 빨리 돌아온다
+	constexpr float RecoilRecoverySpeed = 6.f;
+	// 점프·착지 때 탄퍼짐이 공중 값으로(또는 땅 값으로) 바뀌는 속도. 크로스헤어가 튀지 않게 보간한다
+	constexpr float AirSpreadInterpSpeed = 10.f;
+	// 카메라 정면으로 벽을 찾는 거리(cm). 벽이 이보다 가까워지면 총을 내리기 시작한다
+	constexpr float WallBlockStartDistance = 75.f;
+	// 벽이 이 거리(cm) 이하면 총을 다 내린다
+	constexpr float WallBlockFullDistance = 45.f;
+	// 총을 내리고 올리는 속도
+	constexpr float WallBlockInterpSpeed = 10.f;
+	// 벽 감지 시작점: 카메라에서 총이 놓이는 쪽(시선 기준 X 앞, Y 오른쪽, Z 위)으로 옮긴 위치(cm)
+	// 실제 총 위치를 쓰면 총을 내릴 때마다 벽에서 멀어져 다시 올라가며 떨리므로 카메라 기준 고정값을 쓴다
+	const FVector WallBlockSweepOffset = FVector(0.f, 15.f, -10.f);
+	// 벽 감지 구의 반경(cm). 시선이 벽과 나란해도 총열이 지나는 공간에 벽이 있으면 걸리도록
+	constexpr float WallBlockSweepRadius = 10.f;
+	// 카메라 벽 검사 구의 반경(cm). 근평면(5)보다 커야 벽이 화면에서 잘려 벽 너머가 보이지 않는다
+	constexpr float CameraWallRadius = 8.f;
+	// 카메라가 벽에서 이만큼(cm) 안쪽이면 벽 쪽 이동 입력을 막는다. 밀려난 뒤 바로 다시 들어가 앞뒤로 떨리지 않게
+	constexpr float CameraWallMargin = 5.f;
+	// 조준을 풀거나 쏜 뒤 준비 자세(총구 앞)를 유지하는 시간(초). 지나면 총을 내린다
+	constexpr float ReadyHoldTime = 2.f;
+	// 내린 총을 드는(또는 내리는) 시간(초). 내린 채 쏘면 이만큼 든 뒤 발사한다
+	constexpr float RaiseTime = 0.2f;
+	// 입력 방향이 정면에서 이 각도(도) 안일 때만 질주한다. 벗어나면 조깅/걷기 속도로 돌아간다
+	constexpr float SprintMaxAngle = 20.f;
+	// 최대 속도를 낮출 때(질주 → 조깅/걷기) 초당 줄이는 양(cm/s). 한 번에 낮추면 몸이 0.2초 만에 멈춰 이동 애니메이션 블렌드가 따라오지 못한다
+	constexpr float SpeedDownRate = 600.f;
+	// 옆·뒤로 갈 때 최대 속도 비율(정면 = 1). 이동 애니메이션 실제 속도(옆 약 0.75, 뒤 약 0.6배)에 맞춰 발 미끄러짐을 줄인다
+	constexpr float StrafeSpeedScale = 0.9f;
+	constexpr float BackwardSpeedScale = 0.6f;
+	// 키를 떼고 이 속도(cm/s) 아래가 되면 3인칭 애님이 ABP Stop 상태로 간다(ALS ShouldMove 값 150). UHuntAnimInstance가 읽는다
+	constexpr float StopBrakeSpeed = 150.f;
 }
 
 AHuntCharacter::AHuntCharacter()
@@ -167,6 +214,11 @@ void AHuntCharacter::UpdateWeaponVisibility()
 	EquippedWeapon->SetActorHiddenInGame(!IsLocallyControlled() || FirstPersonArms->bHiddenInGame);
 }
 
+float AHuntCharacter::GetStopBrakeSpeed() const
+{
+	return StopBrakeSpeed;
+}
+
 const UWeaponDefinition* AHuntCharacter::GetWeaponDefinition() const
 {
 	return EquippedWeapon ? EquippedWeapon->Definition.Get() : nullptr;
@@ -193,7 +245,7 @@ float AHuntCharacter::GetCurrentSpread() const
 void AHuntCharacter::UpdateWallBlock(float DeltaSeconds)
 {
 	float Target = 0.f;
-	if (EquippedWeapon)
+	if (EquippedWeapon && bLowerWeaponNearWall)
 	{
 		const FRotator ViewRotation = GetControlRotation();
 		const FVector Start = FirstPersonCamera->GetComponentLocation() + ViewRotation.RotateVector(WallBlockSweepOffset);
@@ -224,7 +276,15 @@ void AHuntCharacter::UpdateStance(float DeltaSeconds)
 		}
 	}
 	RelaxedAlpha = FMath::FInterpConstantTo(RelaxedAlpha, Stance == EHuntWeaponStance::Relaxed ? 1.f : 0.f, DeltaSeconds, 1.f / RaiseTime);
+}
 
+void AHuntCharacter::UpdateAirSpread(float DeltaSeconds)
+{
+	AirSpreadAlpha = FMath::FInterpTo(AirSpreadAlpha, GetCharacterMovement()->IsFalling() ? 1.f : 0.f, DeltaSeconds, AirSpreadInterpSpeed);
+}
+
+void AHuntCharacter::FireAfterRaise()
+{
 	// 내린 채 누른 발사: 다 들고 나서 쏜다. 그사이 버튼을 뗐으면(짧게 클릭) 한 발만
 	if (bFireAfterRaise && RelaxedAlpha <= 0.f && EquippedWeapon)
 	{
@@ -250,10 +310,12 @@ void AHuntCharacter::Tick(float DeltaSeconds)
 	}
 
 	UpdateHeadCameraLocation(DeltaSeconds);
+	UpdateCameraWall();
 	UpdateAimAlpha(DeltaSeconds);
-	AirSpreadAlpha = FMath::FInterpTo(AirSpreadAlpha, GetCharacterMovement()->IsFalling() ? 1.f : 0.f, DeltaSeconds, AirSpreadInterpSpeed);
+	UpdateAirSpread(DeltaSeconds);
 	UpdateWallBlock(DeltaSeconds);
 	UpdateStance(DeltaSeconds);
+	FireAfterRaise();
 	ApplyRecoil(DeltaSeconds);
 
 	const float AimBlend = GetAimBlend();
@@ -339,6 +401,44 @@ void AHuntCharacter::UpdateHeadCameraLocation(float DeltaSeconds)
 
 	// 보간으로 걷기·달리기의 머리 흔들림을 줄인다 (0이면 즉시 따라감)
 	HeadCameraLocation = CameraFollowSpeed > 0.f ? FMath::VInterpTo(HeadCameraLocation, Target, DeltaSeconds, CameraFollowSpeed) : Target;
+}
+
+void AHuntCharacter::UpdateCameraWall()
+{
+	// 캡슐 중심(카메라 높이)에서 카메라까지 구 스윕. 내려다볼 때 캡슐 밖으로 나간 카메라가 벽에 들어가면
+	// 이번 프레임은 카메라를 벽 앞에 세우고 캐릭터를 뒤로 걷게 해서(이동 애니메이션 재생) 몸째 벽에서 뗀다
+	const FTransform& CapsuleTransform = GetCapsuleComponent()->GetComponentTransform();
+	const FVector Camera = CapsuleTransform.TransformPosition(HeadCameraLocation);
+	const FVector Start(CapsuleTransform.GetLocation().X, CapsuleTransform.GetLocation().Y, Camera.Z);
+	const FVector Direction = (Camera - Start).GetSafeNormal();
+	const float CameraDistance = FVector::Dist(Start, Camera);
+
+	CameraWallNormal = FVector::ZeroVector;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(HuntCameraWall), false, this);
+	Params.AddIgnoredActor(EquippedWeapon);
+	Params.AddIgnoredActor(BodyWeapon);
+	FHitResult Hit;
+	// 시작점(캡슐 중심)부터 겹쳐 있으면 법선을 믿을 수 없다
+	if (Direction.IsNearlyZero()
+		|| !GetWorld()->SweepSingleByChannel(Hit, Start, Camera + Direction * CameraWallMargin, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(CameraWallRadius), Params)
+		|| Hit.bStartPenetrating)
+	{
+		bCameraWallPush = false;
+		return;
+	}
+
+	CameraWallNormal = Hit.ImpactNormal.GetSafeNormal2D();
+	const bool bPenetrating = Hit.Distance < CameraDistance;
+	if (bPenetrating)
+	{
+		HeadCameraLocation = CapsuleTransform.InverseTransformPosition(Start + Direction * Hit.Distance);
+	}
+	// 한 번 밀기 시작하면 벽에서 CameraWallMargin만큼 떨어질 때까지 계속 민다. 벽에서 나오자마자 멈추면 입력이 프레임마다 켜졌다 꺼져 다리가 떨린다
+	bCameraWallPush = bPenetrating || bCameraWallPush;
+	if (bCameraWallPush)
+	{
+		AddMovementInput(CameraWallNormal);
+	}
 }
 
 void AHuntCharacter::UpdateAimAlpha(float DeltaSeconds)
@@ -501,8 +601,10 @@ void AHuntCharacter::Move(const FInputActionValue& Value)
 	const FVector2D Input = Value.Get<FVector2D>();
 	const FRotator YawRotation(0.f, GetControlRotation().Yaw, 0.f);
 
-	AddMovementInput(FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X), Input.Y);
-	AddMovementInput(FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y), Input.X);
+	FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X) * Input.Y + FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y) * Input.X;
+	// 카메라가 벽에 닿아 있으면 벽으로 들어가는 성분만 뺀다(벽을 따라 옆으로는 간다)
+	Direction -= CameraWallNormal * FMath::Min(0.f, FVector::DotProduct(Direction, CameraWallNormal));
+	AddMovementInput(Direction);
 }
 
 void AHuntCharacter::Look(const FInputActionValue& Value)

@@ -40,7 +40,7 @@ public:
 	bool IsRunGait() const { return bRunGait; }
 
 	// 키를 뗀 뒤 3인칭 애님이 ABP Stop 상태로 가는 속도
-	float GetStopBrakeSpeed() const { return StopBrakeSpeed; }
+	float GetStopBrakeSpeed() const;
 
 	// 지금 쏘면 탄이 퍼지는 원뿔의 반각(도). 발사와 크로스헤어가 같이 쓴다
 	float GetCurrentSpread() const;
@@ -76,74 +76,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh")
 	TObjectPtr<USkeletalMeshComponent> FirstPersonLegs;
 
-	// 머리 뼈에서 시선 방향으로 얼마나 앞에 둘지(cm). 아래를 볼 때 하체 메시의 허리 잘린 면이 보이면 늘린다
-	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "0.0"))
-	float CameraForwardOffset = 15.f;
-
-	// 머리 위치를 따라가는 속도. 낮을수록 흔들림이 줄고 반응이 느려진다 (0 = 즉시)
-	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "0.0"))
-	float CameraFollowSpeed = 15.f;
-
 	// 조준 시 시야각(가늠쇠 기준. 스코프 배율은 M3에서)
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim", meta = (ClampMin = "5.0", ClampMax = "170.0"))
 	float AimFOV = 70.f;
-
-	// 총 킥이 목표 위치로 튀어 나가는 속도. 높을수록 한 발이 날카롭게 튄다
-	UPROPERTY(EditDefaultsOnly, Category = "Camera|Kick", meta = (ClampMin = "0.0"))
-	float KickSnapSpeed = 30.f;
-
-	// 무기 흔들림: 시선 회전 속도(도/초)에 곱해 총을 반대로 기울이는 비율
-	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sway", meta = (ClampMin = "0.0"))
-	float SwayAmount = 0.02f;
-
-	// 흔들림 최대 각도(도)
-	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sway", meta = (ClampMin = "0.0"))
-	float MaxSwayAngle = 3.f;
-
-	// 흔들림이 목표를 따라가고 제자리로 돌아오는 속도. 낮을수록 총이 늦게 따라온다
-	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sway", meta = (ClampMin = "0.0"))
-	float SwayInterpSpeed = 8.f;
-
-	// 완전 조준 시 흔들림 비율 (가늠자가 화면 중앙에서 크게 벗어나지 않게)
-	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sway", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float AimSwayScale = 0.3f;
-
-	// 사격을 멈춘 뒤 반동이 원래 조준점으로 돌아오는 속도. 높을수록 빨리 돌아온다
-	UPROPERTY(EditDefaultsOnly, Category = "Camera|Recoil", meta = (ClampMin = "0.0"))
-	float RecoilRecoverySpeed = 6.f;
-
-	// 점프·착지 때 탄퍼짐이 공중 값으로(또는 땅 값으로) 바뀌는 속도. 크로스헤어가 튀지 않게 보간한다
-	UPROPERTY(EditDefaultsOnly, Category = "Spread", meta = (ClampMin = "0.0"))
-	float AirSpreadInterpSpeed = 10.f;
-
-	// 카메라 정면으로 벽을 찾는 거리(cm). 벽이 이보다 가까워지면 총을 내리기 시작한다
-	UPROPERTY(EditDefaultsOnly, Category = "WallBlock", meta = (ClampMin = "0.0"))
-	float WallBlockStartDistance = 75.f;
-
-	// 벽이 이 거리(cm) 이하면 총을 다 내린다
-	UPROPERTY(EditDefaultsOnly, Category = "WallBlock", meta = (ClampMin = "0.0"))
-	float WallBlockFullDistance = 45.f;
-
-	// 총을 내리고 올리는 속도
-	UPROPERTY(EditDefaultsOnly, Category = "WallBlock", meta = (ClampMin = "0.0"))
-	float WallBlockInterpSpeed = 10.f;
-
-	// 벽 감지 시작점: 카메라에서 총이 놓이는 쪽(시선 기준 X 앞, Y 오른쪽, Z 위)으로 옮긴 위치(cm)
-	// 실제 총 위치를 쓰면 총을 내릴 때마다 벽에서 멀어져 다시 올라가며 떨리므로 카메라 기준 고정값을 쓴다
-	UPROPERTY(EditDefaultsOnly, Category = "WallBlock")
-	FVector WallBlockSweepOffset = FVector(0.f, 15.f, -10.f);
-
-	// 벽 감지 구의 반경(cm). 시선이 벽과 나란해도 총열이 지나는 공간에 벽이 있으면 걸리도록
-	UPROPERTY(EditDefaultsOnly, Category = "WallBlock", meta = (ClampMin = "0.0"))
-	float WallBlockSweepRadius = 10.f;
-
-	// 조준을 풀거나 쏜 뒤 준비 자세(총구 앞)를 유지하는 시간(초). 지나면 총을 내린다
-	UPROPERTY(EditDefaultsOnly, Category = "Stance", meta = (ClampMin = "0.0"))
-	float ReadyHoldTime = 2.f;
-
-	// 내린 총을 드는(또는 내리는) 시간(초). 내린 채 쏘면 이만큼 든 뒤 발사한다
-	UPROPERTY(EditDefaultsOnly, Category = "Stance", meta = (ClampMin = "0.01"))
-	float RaiseTime = 0.2f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> MoveAction;
@@ -178,25 +113,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Movement")
 	float SprintSpeed = 600.f;
 
-	// 입력 방향이 정면에서 이 각도(도) 안일 때만 질주한다. 벗어나면 조깅/걷기 속도로 돌아간다
-	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.0", ClampMax = "90.0"))
-	float SprintMaxAngle = 20.f;
-
-	// 최대 속도를 낮출 때(질주 → 조깅/걷기) 초당 줄이는 양(cm/s). 한 번에 낮추면 몸이 0.2초 만에 멈춰 이동 애니메이션 블렌드가 따라오지 못한다
-	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "1.0"))
-	float SpeedDownRate = 600.f;
-
-	// 옆·뒤로 갈 때 최대 속도 비율(정면 = 1). 이동 애니메이션 실제 속도(옆 약 0.75, 뒤 약 0.6배)에 맞춰 발 미끄러짐을 줄인다
-	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.1", ClampMax = "1.0"))
-	float StrafeSpeedScale = 0.9f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.1", ClampMax = "1.0"))
-	float BackwardSpeedScale = 0.6f;
-
-	// 키를 떼고 이 속도(cm/s) 아래가 되면 3인칭 애님이 ABP Stop 상태로 간다(ALS ShouldMove 값 150). UHuntAnimInstance가 읽는다
-	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.0"))
-	float StopBrakeSpeed = 150.f;
-
 	// BeginPlay에서 이 총을 스폰해 손에 든다. 비워두면 맨손
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> DefaultWeapon;
@@ -204,6 +120,10 @@ protected:
 	// ik_hand_gun 기준 총 위치(회전 없음). AR4 손잡이가 LPSP 손에 오도록 잰 값, 총 메시마다 다르다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	FVector FirstPersonWeaponOffset = FVector(-2.03f, -8.35f, -0.1f);
+
+	// 테스트용: false면 벽 앞에서도 총을 내리지 않는다. PIE 중 인스턴스에서도 바꿀 수 있다
+	UPROPERTY(EditAnywhere, Category = "Weapon")
+	bool bLowerWeaponNearWall = true;
 
 	// 장착 중인 총(발사용). 1인칭 팔에 붙고 내 화면에만 보인다. 없으면 맨손
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Weapon")
@@ -251,6 +171,8 @@ private:
 
 	// 카메라·조준
 	void UpdateHeadCameraLocation(float DeltaSeconds);
+	// 카메라가 벽에 들어가면 벽 앞에 세우고 캐릭터를 뒤로 걷게 한다
+	void UpdateCameraWall();
 	void UpdateAimAlpha(float DeltaSeconds);
 	void UpdateCameraView(float AimBlend);
 
@@ -262,8 +184,12 @@ private:
 	// 1인칭 팔 (흔들림·킥·조준 정렬)
 	void UpdateWeaponSway(float DeltaSeconds);
 	void UpdateWallBlock(float DeltaSeconds);
-	// 총 자세 전환(준비 유지 시간, 내린 정도, 들고 나서 발사)
+	// 총 자세 전환(준비 유지 시간, 내린 정도)
 	void UpdateStance(float DeltaSeconds);
+	// 내린 채 누른 발사를 총을 다 든 뒤에 쏜다
+	void FireAfterRaise();
+	// 공중 탄퍼짐 비율
+	void UpdateAirSpread(float DeltaSeconds);
 	void UpdateWeaponKick(float DeltaSeconds);
 	void UpdateFirstPersonArms(float AimBlend);
 	FTransform GetSightAlignedArmsTransform(float AimBlend) const;
@@ -287,6 +213,12 @@ private:
 
 	// shortcut: 복제하지 않아 다른 플레이어에게는 총을 내린 자세가 안 보인다, 멀티 점검 때 조준 상태와 함께 복제
 	float WallBlockAlpha = 0.f;
+
+	// 카메라가 닿은 벽의 수평 법선(벽 바깥쪽). 닿지 않으면 0. 이동 입력에서 벽 쪽 성분을 막는 데 쓴다
+	FVector CameraWallNormal = FVector::ZeroVector;
+
+	// 카메라가 벽에 들어가 뒤로 밀어내는 중인지. 벽에서 CameraWallMargin만큼 떨어지면 끝난다
+	bool bCameraWallPush = false;
 
 	// 조준 버튼을 누르고 있으면 Aiming
 	// shortcut: 총 자세를 복제하지 않는다(다른 플레이어에게는 대기 자세로 보이고 조준 자세가 안 보임), 멀티 점검 때 복제 추가

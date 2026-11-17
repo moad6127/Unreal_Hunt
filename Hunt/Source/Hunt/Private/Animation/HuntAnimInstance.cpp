@@ -87,6 +87,7 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	UpdateVelocity();
+	UpdateLandRecovery(DeltaSeconds);
 	UpdateShouldMove();
 	UpdateLean(DeltaSeconds);
 	UpdateFoldedDirections(DeltaSeconds);
@@ -221,10 +222,11 @@ void UHuntAnimInstance::UpdatePlantTimes()
 void UHuntAnimInstance::UpdateFootLock(float DeltaSeconds)
 {
 	// 제자리 회전 중이나 하체 전환 중에는 애니메이션이 발을 옮기므로 고정하지 않는다
-	// 마지막 한 걸음 클립 중에는 애니메이션이 발과 몸을 옮긴다. 이동 입력이 들어오면 바로 끊는다
+	// 마지막 한 걸음 클립 중에는 애니메이션이 발과 몸을 옮긴다. 이동 입력이 들어오거나 점프하면 바로 끊는다(슬롯 몽타주가 점프 스테이트를 덮는다)
 	const bool bLegTransition = ShootingLegsAlpha > 0.f && ShootingLegsAlpha < 1.f;
 	const bool bCrossedStop = CrossedStopMontage && Montage_IsActive(CrossedStopMontage);
-	if (bCrossedStop && !Character->GetCharacterMovement()->GetCurrentAcceleration().IsNearlyZero())
+	const UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
+	if (bCrossedStop && (!Movement->GetCurrentAcceleration().IsNearlyZero() || Movement->IsFalling()))
 	{
 		Montage_Stop(0.2f, CrossedStopMontage);
 	}
@@ -297,6 +299,13 @@ void UHuntAnimInstance::UpdateVelocity()
 	VelocityDirection = GroundSpeed > KINDA_SMALL_NUMBER ? FRotator::NormalizeAxis(Velocity.Rotation().Yaw - Character->GetActorRotation().Yaw) : 0.f;
 	// 이동 블렌드스페이스는 돌아간 몸 기준 방향으로 고른다(몸이 이동 방향 쪽으로 돌아가 있으면 옆걸음이 대각선 걸음이 된다)
 	Direction = GroundSpeed > KINDA_SMALL_NUMBER ? FRotator::NormalizeAxis(VelocityDirection - RootYawOffset) : 0.f;
+}
+
+void UHuntAnimInstance::UpdateLandRecovery(float DeltaSeconds)
+{
+	// UpdateShouldMove 전에 부른다: bIsFalling이 아직 지난 프레임 값이라 착지한 프레임을 알 수 있다
+	const bool bLanded = bIsFalling && !Character->GetCharacterMovement()->IsFalling();
+	LandRecoveryTime = bLanded ? 0.f : LandRecoveryTime + DeltaSeconds;
 }
 
 void UHuntAnimInstance::UpdateShouldMove()
@@ -445,7 +454,8 @@ void UHuntAnimInstance::UpdateStanceAlphas()
 	{
 		RelaxedAlpha *= LocalShadowRelaxedScale;
 	}
-	AimOffsetAlpha = 1.f - RelaxedAlpha;
+	// 벽에 막혀 총을 내리면 대기 자세처럼 AO를 끄고 머리만 시선 애디티브로 위아래를 본다(ABP 시선 Alpha = 1 - AimOffsetAlpha)
+	AimOffsetAlpha = 1.f - FMath::Max(RelaxedAlpha, WallBlockAlpha);
 }
 
 void UHuntAnimInstance::UpdateLeftHandIK()
@@ -464,9 +474,8 @@ void UHuntAnimInstance::UpdateAimPitch()
 {
 	// 컨트롤러가 있으면 컨트롤 회전(GetBaseAimRotation은 플레이어면 카메라 회전이라 고정 카메라에서 안 변함), 다른 플레이어 캐릭터는 복제된 피치
 	const FRotator AimRotation = Character->GetController() ? Character->GetControlRotation() : Character->GetBaseAimRotation();
-	// 벽에 막혀 총을 내린 만큼 위아래 조준을 뺀다. Yaw는 제자리 회전 보정이라 그대로 둔다
-	// 대기 자세에서는 빼지 않는다: 피치가 상체를 숙여 머리(카메라)를 앞으로 내보내야 아래를 볼 때 카메라가 하체 메시 안쪽 위에 오지 않는다
-	AimPitch = FRotator::NormalizeAxis(AimRotation.Pitch) * (1.f - Character->GetWallBlockAlpha());
+	// 벽 앞·대기 자세에서는 AO가 꺼지고(AimOffsetAlpha) 이 피치는 시선 애디티브가 쓴다
+	AimPitch = FRotator::NormalizeAxis(AimRotation.Pitch);
 }
 
 void UHuntAnimInstance::UpdateTurnInPlace(float DeltaSeconds)

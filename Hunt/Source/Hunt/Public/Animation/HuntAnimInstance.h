@@ -79,6 +79,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bIsFalling = false;
 
+	// 착지 후 지난 시간(초). ABP가 착지 회복 애디티브(MM_Rifle_Jump_RecoveryAdditive)를 이 시간으로 재생한다. 처음엔 클립 끝 너머라 효과 없음
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Locomotion")
+	float LandRecoveryTime = 10.f;
+
 	// 뒤쪽 반구로 이동 중이면 true. 앞/뒤 이동 블렌드스페이스를 고른다(옆걸음 애니메이션이 앞뒤로 엉덩이 방향이 달라서)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bMovingBackward = false;
@@ -184,7 +188,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float SprintAlpha = 0.f;
 
-	// Lyra 에임 오프셋(총을 시선에 겨눔) 가중치 = 1 - RelaxedAlpha
+	// Lyra 에임 오프셋(총을 시선에 겨눔) 가중치 = 1 - max(RelaxedAlpha, WallBlockAlpha)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float AimOffsetAlpha = 1.f;
 
@@ -250,6 +254,7 @@ private:
 	// 속도·이동 방향
 	void UpdateVelocity();
 	// 이동 중인지(멈춤 상태로 갈지)·공중인지. 멈출 때 발이 꼬였으면 마지막 한 걸음 클립을 재생한다
+	void UpdateLandRecovery(float DeltaSeconds);
 	void UpdateShouldMove();
 	// 가속 방향으로 몸 기울이기
 	void UpdateLean(float DeltaSeconds);

@@ -7,6 +7,7 @@
 #include "HuntCharacter.generated.h"
 
 class AHuntWeapon;
+class UAttachmentDefinition;
 class UCameraComponent;
 class UInputAction;
 class UWeaponDefinition;
@@ -47,9 +48,6 @@ public:
 
 	// 벽에 막혀 총을 내린 정도(0 = 평소, 1 = 다 내림). 애님은 내린 자세를 이만큼 섞고, 총은 이만큼 총구 방향으로 쏜다
 	float GetWallBlockAlpha() const { return WallBlockAlpha; }
-
-	// 총을 내린 정도(0~1) = 벽 앞 내림과 대기(Relaxed) 자세 중 큰 값. 내린 자세 애디티브, 크로스헤어, 에임 오프셋, 발사 방향이 쓴다
-	float GetWeaponLowerAlpha() const { return FMath::Max(WallBlockAlpha, RelaxedAlpha); }
 
 	// 대기(Relaxed) 자세 블렌드(0 = 준비, 1 = 대기). 시작·끝이 부드럽게 감속된다. 1인칭 대기 포즈가 쓴다
 	float GetRelaxedBlend() const { return FMath::SmoothStep(0.f, 1.f, RelaxedAlpha); }
@@ -117,9 +115,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> DefaultWeapon;
 
-	// ik_hand_gun 기준 총 위치(회전 없음). AR4 손잡이가 LPSP 손에 오도록 잰 값, 총 메시마다 다르다
+	// 기본 총에 총의 기본 부착물 대신 달 부착물. 총이 쓰지 않는 슬롯이거나 호환되지 않으면 붙지 않고 로그만 남는다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FVector FirstPersonWeaponOffset = FVector(-2.03f, -8.35f, -0.1f);
+	TArray<TObjectPtr<UAttachmentDefinition>> DefaultAttachments;
+
+	// 1인칭 오른손 기준점: ik_hand_gun 기준 위치(회전 없음). 총의 Socket_Grip이 여기에 온다. 총과 무관하게 손에 대해 한 번 정하는 값
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	FVector FirstPersonWeaponOffset = FVector(-2.03f, -7.11f, 1.88f);
 
 	// 테스트용: false면 벽 앞에서도 총을 내리지 않는다. PIE 중 인스턴스에서도 바꿀 수 있다
 	UPROPERTY(EditAnywhere, Category = "Weapon")
@@ -251,6 +253,8 @@ private:
 	FRotator PrevControlRotation = FRotator::ZeroRotator;
 
 	float DefaultFOV = 90.f;
+	// BP 카메라의 First Person Scale(벽 뚫림 방지용). 조준하면 1로 보간한다
+	float DefaultFirstPersonScale = 1.f;
 
 	// 아직 조준선에 적용하지 않은 반동과, 사격을 멈추면 되돌릴 반동
 	FRotator PendingRecoil = FRotator::ZeroRotator;

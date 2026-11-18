@@ -7,7 +7,9 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Weapon/HuntWeapon.h"
+#include "Weapon/WeaponAttachmentComponent.h"
 #include "Weapon/WeaponDefinition.h"
 
 namespace
@@ -153,6 +155,7 @@ void AHuntCharacter::BeginPlay()
 	// 조준 정렬에서 팔 포즈(가늠자 위치)를 이번 프레임 것으로 읽기 위해
 	AddTickPrerequisiteComponent(FirstPersonArms);
 	DefaultFOV = FirstPersonCamera->FieldOfView;
+	DefaultFirstPersonScale = FirstPersonCamera->FirstPersonScale;
 
 	if (DefaultWeapon)
 	{
@@ -167,6 +170,15 @@ void AHuntCharacter::EquipDefaultWeapon()
 
 	BodyWeapon = SpawnWeapon();
 	AttachBodyWeapon();
+
+	// 부착물 메시가 총의 1인칭 렌더 설정을 따르므로 붙인 뒤에 장착한다. 총의 기본 부착물을 먼저 달고 DefaultAttachments로 바꿔 단다
+	EquippedWeapon->GetAttachments()->EquipDefaultAttachments();
+	BodyWeapon->GetAttachments()->EquipDefaultAttachments();
+	for (UAttachmentDefinition* Attachment : DefaultAttachments)
+	{
+		EquippedWeapon->GetAttachments()->EquipAttachment(Attachment);
+		BodyWeapon->GetAttachments()->EquipAttachment(Attachment);
+	}
 
 	UpdateWeaponVisibility();
 }
@@ -184,7 +196,8 @@ void AHuntCharacter::AttachFirstPersonWeapon()
 {
 	EquippedWeapon->GetMesh()->SetFirstPersonPrimitiveType(EFirstPersonPrimitiveType::FirstPerson);
 	EquippedWeapon->AttachToComponent(FirstPersonArms, FAttachmentTransformRules::SnapToTargetNotIncludingScale, FirstPersonWeaponBone);
-	EquippedWeapon->GetRootComponent()->SetRelativeLocationAndRotation(FirstPersonWeaponOffset, FRotator::ZeroRotator);
+	// 총의 Socket_Grip이 손 기준점에 오게 옮긴다. 회전은 그대로 둬야 총 축이 시선과 평행하다
+	EquippedWeapon->GetRootComponent()->SetRelativeLocationAndRotation(FirstPersonWeaponOffset - EquippedWeapon->GetRightHandGripOffset(), FRotator::ZeroRotator);
 }
 
 void AHuntCharacter::AttachBodyWeapon()
@@ -192,6 +205,8 @@ void AHuntCharacter::AttachBodyWeapon()
 	// 전신 메시 설정을 따른다: 기본은 내 화면에서 숨기고 그림자만 남김, 3인칭 테스트 BP(None)에서는 보임
 	BodyWeapon->GetMesh()->SetFirstPersonPrimitiveType(GetMesh()->FirstPersonPrimitiveType);
 	BodyWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocketName);
+	// HandGrip_R 소켓이 오른손 기준점이다
+	BodyWeapon->GetRootComponent()->SetRelativeLocation(-BodyWeapon->GetRightHandGripOffset());
 }
 
 void AHuntCharacter::NotifyControllerChanged()
@@ -492,6 +507,9 @@ void AHuntCharacter::UpdateCameraView(float AimBlend)
 {
 	FirstPersonCamera->SetRelativeLocation(HeadCameraLocation);
 	FirstPersonCamera->SetFieldOfView(FMath::Lerp(DefaultFOV, AimFOV, AimBlend));
+	// Scale은 카메라 중심으로 눌러 그려 화면 모양은 같고 깊이만 바뀐다. 0.4면 근평면이 총 기준 12.5cm라 조준경 접안렌즈가 잘려,
+	// 조준 중에는 1로 둔다(벽 앞에서는 WallBlock이 조준을 막아 벽 뚫림이 없다)
+	FirstPersonCamera->SetFirstPersonScale(FMath::Lerp(DefaultFirstPersonScale, 1.f, AimBlend));
 }
 
 void AHuntCharacter::UpdateWeaponSway(float DeltaSeconds)
@@ -543,9 +561,12 @@ FTransform AHuntCharacter::GetSightAlignedArmsTransform(float AimBlend) const
 	// 가늠자의 팔 기준 위치는 팔 위치와 무관해서 옮겨도 되먹임이 없다
 	FTransform ArmsToCamera = ArmsBaseTransform;
 	const USkeletalMeshComponent* WeaponMesh = EquippedWeapon ? EquippedWeapon->GetMesh() : nullptr;
-	if (WeaponMesh && WeaponMesh->DoesSocketExist(SightSocketName) && WeaponMesh->GetAttachParent() == FirstPersonArms)
+	// 조준경에 Socket_Sight(접안렌즈 광축)가 있으면 조준경, 없으면 총의 가늠자
+	const UStaticMeshComponent* Optic = WeaponMesh ? EquippedWeapon->GetAttachments()->FindAttachmentSocketMesh(EHuntAttachmentSlot::Optic, SightSocketName) : nullptr;
+	const USceneComponent* SightComponent = Optic ? static_cast<const USceneComponent*>(Optic) : WeaponMesh;
+	if (WeaponMesh && SightComponent->DoesSocketExist(SightSocketName) && WeaponMesh->GetAttachParent() == FirstPersonArms)
 	{
-		const FVector SightInCamera = ArmsWorldToCamera(ArmsToCamera, WeaponMesh->GetSocketLocation(SightSocketName));
+		const FVector SightInCamera = ArmsWorldToCamera(ArmsToCamera, SightComponent->GetSocketLocation(SightSocketName));
 		ArmsToCamera.AddToTranslation(-FVector(0.f, SightInCamera.Y, SightInCamera.Z) * AimBlend);
 	}
 	return ArmsToCamera;

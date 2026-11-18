@@ -5,6 +5,7 @@
 #include "Character/HuntCharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
+#include "Weapon/GripAttachmentDefinition.h"
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Curves/CurveVector.h"
@@ -95,6 +96,7 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	UpdateMovingBackward(DeltaSeconds);
 	UpdateSprintBlend(DeltaSeconds);
 	UpdateStanceAlphas();
+	UpdateRelaxedPoses();
 	UpdateLeftHandIK();
 	UpdateAimPitch();
 	UpdateTurnInPlace(DeltaSeconds);
@@ -458,15 +460,36 @@ void UHuntAnimInstance::UpdateStanceAlphas()
 	AimOffsetAlpha = 1.f - FMath::Max(RelaxedAlpha, WallBlockAlpha);
 }
 
+void UHuntAnimInstance::UpdateRelaxedPoses()
+{
+	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
+	const UGripAttachmentDefinition* Grip = Weapon ? Weapon->GetGrip() : nullptr;
+	const bool bGripRelaxed = Grip && Grip->ThirdPersonRelaxedPose;
+	RelaxedPose = bGripRelaxed ? Grip->ThirdPersonRelaxedPose : DefaultRelaxedPose;
+	RelaxedRunArms = bGripRelaxed && Grip->ThirdPersonRelaxedRunArms ? Grip->ThirdPersonRelaxedRunArms : DefaultRelaxedRunArms;
+}
+
 void UHuntAnimInstance::UpdateLeftHandIK()
 {
 	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
 	const bool bHasWeapon = Weapon && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent();
 	LeftHandIKAlpha = bHasWeapon ? 1.f : 0.f;
+	// 대기 자세 팔이 실제로 섞인 정도: ABP는 대기 블렌드(RelaxedAlpha) 위에 질주(SprintAlpha)도 같은 대기 팔 경로를 쓴다
+	const float RelaxedArmsAlpha = FMath::Lerp(RelaxedAlpha, 1.f, SprintAlpha);
 	if (bHasWeapon)
 	{
 		const FTransform HandTransform = GetSkelMeshComponent()->GetSocketTransform(TEXT("hand_r"));
-		LeftHandIKLocation = HandTransform.InverseTransformPosition(Weapon->GetLeftHandGripLocation(AimAlpha));
+		LeftHandIKLocation = HandTransform.InverseTransformPosition(Weapon->GetLeftHandGripLocation(AimAlpha, RelaxedArmsAlpha));
+	}
+
+	const UGripAttachmentDefinition* Grip = bHasWeapon ? Weapon->GetGrip() : nullptr;
+	LeftHandGripPose = Grip ? Grip->HandPose : nullptr;
+	FQuat GripRotation;
+	const bool bGripHand = LeftHandGripPose && Weapon->GetLeftHandGripRotation(AimAlpha, RelaxedArmsAlpha, GripRotation);
+	LeftHandGripAlpha = bGripHand ? 1.f : 0.f;
+	if (bGripHand)
+	{
+		LeftHandIKRotation = GetSkelMeshComponent()->GetComponentTransform().InverseTransformRotation(GripRotation).Rotator();
 	}
 }
 

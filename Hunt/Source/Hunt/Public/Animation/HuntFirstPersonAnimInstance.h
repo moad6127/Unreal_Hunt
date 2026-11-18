@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
+#include "Weapon/GripAttachmentDefinition.h"
 #include "HuntFirstPersonAnimInstance.generated.h"
 
 class AHuntCharacter;
@@ -59,6 +60,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	FVector LeftHandIKLocation = FVector::ZeroVector;
 
+	// 손잡이가 없을 때의 그립 포즈(핸드가드 받침, A_FP_Rifle_*_Pose_Grip). ABP 기본값에서 정한다
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	FHuntGripPoses DefaultGripPoses;
+
+	// 지금 쓸 그립 포즈: 손잡이 부착물이 있으면 그 포즈, 없으면 DefaultGripPoses. ABP 그립 포즈 노드가 읽는다
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	FHuntGripPoses GripPoses;
+
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<AHuntCharacter> Character;
@@ -69,5 +78,6 @@ private:
 
 	// 그림자(전신) 걸음 위치에 맞춘 걷기·질주 애디티브 재생 시간
 	void UpdateSwayTimes();
+	void UpdateGripPoses();
 	void UpdateLeftHandIK();
 };

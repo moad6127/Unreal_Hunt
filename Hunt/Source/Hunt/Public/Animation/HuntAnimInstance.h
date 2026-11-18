@@ -205,6 +205,33 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	FVector LeftHandIKLocation = FVector::ZeroVector;
 
+	// 손잡이 손 가중치(손잡이에 손 포즈와 왼손 소켓이 있으면 1). ABP의 손가락 레이어와 손 방향(Modify Bone hand_l)이 쓴다
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float LeftHandGripAlpha = 0.f;
+
+	// 손잡이를 쥔 손 모양(손잡이 DA의 HandPose). ABP가 손가락 뼈만 이 포즈로 덮는다
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UAnimSequence> LeftHandGripPose;
+
+	// 기본 대기 자세 포즈·앞 달리기 팔(ABP 기본값에서 지정). 손잡이 DA에 3인칭 대기 포즈가 있으면 그것으로 바꾼다
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	TObjectPtr<UAnimSequence> DefaultRelaxedPose;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	TObjectPtr<UAnimSequence> DefaultRelaxedRunArms;
+
+	// 지금 쓸 대기 자세 포즈·앞 달리기 팔. ABP 대기 포즈 노드(Sequence 핀)가 읽는다
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UAnimSequence> RelaxedPose;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UAnimSequence> RelaxedRunArms;
+
+	// 손잡이를 쥔 왼손 방향(컴포넌트 공간) = 손잡이 Socket_LeftHand 회전
+	// shortcut: 지난 프레임의 총 회전이라 몸이 빨리 돌면 한 프레임 늦는다, 손이 흔들려 보이면 hand_r 기준으로 바꾼다
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	FRotator LeftHandIKRotation = FRotator::ZeroRotator;
+
 	// 발 고정(ALS Foot Lock): 멈추는 순간 디딘 발을 월드에 고정해 Idle로 섞이는 동안 미끄러지지 않게 한다
 	// ABP가 발 IK(Control Rig) 앞에서 ik_foot_l/r을 이 위치(컴포넌트 공간)로 옮긴다. Alpha가 0이면 애니메이션 그대로
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FootLock")
@@ -271,6 +298,8 @@ private:
 	// 조준·벽 앞·대기 자세 가중치
 	void UpdateStanceAlphas();
 	void UpdateLeftHandIK();
+	// 손잡이 DA에 3인칭 대기 포즈가 있으면 그것, 없으면 기본 대기 포즈
+	void UpdateRelaxedPoses();
 	// SprintAlpha의 감속 전 진행도(0~1, 일정 속도로 변함)
 	float SprintBlend = 0.f;
 	void UpdateAimPitch();

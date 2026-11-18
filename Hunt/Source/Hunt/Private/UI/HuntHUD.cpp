@@ -21,8 +21,8 @@ void AHuntHUD::DrawHUD()
 		return;
 	}
 
-	// 조준하거나 벽에 막혀 총을 내리면(탄이 크로스헤어로 가지 않음) 흐려진다
-	const float Opacity = (1.f - Character->GetAimBlend()) * (1.f - Character->GetWeaponLowerAlpha());
+	// 조준하거나 벽에 막혀 총을 내리면(탄이 크로스헤어로 가지 않음) 흐려진다. 대기 자세는 총을 다 든 뒤 쏘므로 그대로 보인다
+	const float Opacity = (1.f - Character->GetAimBlend()) * (1.f - Character->GetWallBlockAlpha());
 	if (Opacity <= 0.f)
 	{
 		return;

@@ -6,7 +6,9 @@
 #include "GameFramework/Actor.h"
 #include "HuntWeapon.generated.h"
 
+class UGripAttachmentDefinition;
 class USkeletalMeshComponent;
+class UWeaponAttachmentComponent;
 class UWeaponDefinition;
 
 UCLASS()
@@ -26,12 +28,22 @@ public:
 	bool IsAutoFiring() const;
 
 	USkeletalMeshComponent* GetMesh() const { return Mesh; }
+	UWeaponAttachmentComponent* GetAttachments() const { return Attachments; }
 
-	// 왼손이 잡을 위치(월드). 지향사격 소켓과 조준 소켓(없으면 지향사격 소켓) 사이를 AimAlpha로 섞는다
-	FVector GetLeftHandGripLocation(float AimAlpha) const;
+	// 손잡이 슬롯에 달린 손잡이 부착물 (없거나 손잡이가 아니면 nullptr)
+	const UGripAttachmentDefinition* GetGrip() const;
+
+	// 왼손이 잡을 위치(월드). 지향사격 소켓 → 대기 소켓(RelaxedAlpha) → 조준 소켓(AimAlpha) 순서로 섞는다. 대기·조준 소켓이 없으면 지향사격 소켓
+	FVector GetLeftHandGripLocation(float AimAlpha, float RelaxedAlpha) const;
+
+	// 손잡이 부착물에 왼손 소켓이 있으면 그 회전(월드, 왼손 hand_l 방향). 위치와 같은 순서로 섞는다. 없으면 false (애니메이션의 손 방향 그대로)
+	bool GetLeftHandGripRotation(float AimAlpha, float RelaxedAlpha, FQuat& OutRotation) const;
 
 	// 1인칭 왼손목이 갈 위치(월드). 총에 1인칭 왼손 소켓이 없으면 false (그립 포즈 그대로 둔다)
 	bool GetFirstPersonLeftHandGripLocation(FVector& OutLocation) const;
+
+	// 오른손이 쥐는 지점(Socket_Grip)의 총 메시 공간 위치. 손 기준점에 이 지점이 오도록 총을 붙인다. 소켓이 없으면 원점
+	FVector GetRightHandGripOffset() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> Definition;
@@ -40,7 +52,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<USkeletalMeshComponent> Mesh;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UWeaponAttachmentComponent> Attachments;
+
 private:
+	// 손잡이 부착물에 이 왼손 소켓이 있으면 손잡이 메시, 없으면 총 메시
+	const USceneComponent* GetLeftHandSocketComponent(FName SocketName) const;
 	// 총구에서 크로스헤어가 가리키는 점을 향해, 현재 탄퍼짐 안에서 발사체를 쏜다
 	void Shoot();
 	// 카메라 중앙 트레이스로 조준점을 구해 총구에서 그 점을 향하는 방향

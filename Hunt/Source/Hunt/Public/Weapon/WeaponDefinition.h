@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Weapon/AttachmentDefinition.h"
 #include "WeaponDefinition.generated.h"
 
 class AHuntProjectile;
@@ -18,6 +19,25 @@ enum class EHuntFireMode : uint8
 	Auto
 };
 
+// 총의 부착 슬롯 하나
+USTRUCT(BlueprintType)
+struct FHuntWeaponSlot
+{
+	GENERATED_BODY()
+
+	// 부착물을 달면 숨길 기본 부품 뼈(예: 탄창 b_gun_mag). 없으면 비워 둔다
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	FName HiddenBone;
+
+	// 총이 생성될 때 이 슬롯에 다는 부착물(Attachments 목록에 없어도 된다). 비우면 빈 슬롯
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	TObjectPtr<UAttachmentDefinition> DefaultAttachment;
+
+	// 이 슬롯에 달 수 있는 부착물. 목록에 없는 부착물은 붙지 않는다
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	TArray<TObjectPtr<UAttachmentDefinition>> Attachments;
+};
+
 /**
  * 총 본체 데이터. 총 한 종류당 에셋 하나 (DA_AR4 등)
  */
@@ -29,6 +49,46 @@ class HUNT_API UWeaponDefinition : public UPrimaryDataAsset
 public:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<USkeletalMesh> Mesh;
+
+	// 슬롯이 켜져 있으면 그 슬롯을 반환, 꺼져 있으면 nullptr
+	const FHuntWeaponSlot* FindSlot(EHuntAttachmentSlot Slot) const;
+
+	// 부착 슬롯. 체크를 끈 슬롯에는 아무것도 붙지 않는다
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
+	bool bOptic = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bOptic"))
+	FHuntWeaponSlot Optic;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
+	bool bMuzzle = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bMuzzle"))
+	FHuntWeaponSlot Muzzle;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
+	bool bUnderbarrel = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bUnderbarrel"))
+	FHuntWeaponSlot Underbarrel;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
+	bool bMagazine = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bMagazine"))
+	FHuntWeaponSlot Magazine;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
+	bool bStock = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bStock"))
+	FHuntWeaponSlot Stock;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
+	bool bTactical = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bTactical"))
+	FHuntWeaponSlot Tactical;
 
 	// 탄속·낙차는 발사체 BP에서 조정한다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")

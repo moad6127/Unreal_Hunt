@@ -4,21 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Weapon/Attachment/AttachmentTypes.h"
 #include "AttachmentDefinition.generated.h"
 
 class UStaticMesh;
-
-// 부착 슬롯. 게임 전체에 하나의 목록이고, 총마다 쓸 수 있는 슬롯만 켠다. 총 메시 소켓 이름은 Socket_<슬롯 이름>
-UENUM(BlueprintType)
-enum class EHuntAttachmentSlot : uint8
-{
-	Optic,
-	Muzzle,
-	Underbarrel,
-	Magazine,
-	Stock,
-	Tactical
-};
 
 /**
  * 부착물 데이터. 부착물 한 종류당 에셋 하나

@@ -3,26 +3,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Weapon/AttachmentDefinition.h"
+#include "Weapon/Attachment/AttachmentDefinition.h"
 #include "GripAttachmentDefinition.generated.h"
 
 class UAnimSequence;
-
-// 1인칭 왼손 그립 포즈 3개. 손 모양·팔꿈치를 정하고, 손목 위치는 IK가 Socket_LeftHand_FP에 맞춘다
-USTRUCT(BlueprintType)
-struct FHuntGripPoses
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UAnimSequence> Idle;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UAnimSequence> Aim;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UAnimSequence> Relaxed;
-};
 
 /**
  * 손잡이(Underbarrel) 부착물. 달면 1인칭 왼손이 이 그립 포즈로 바뀐다

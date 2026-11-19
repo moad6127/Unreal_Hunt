@@ -6,6 +6,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
+#include "Weapon/Attachment/GripAttachmentDefinition.h"
 
 namespace
 {

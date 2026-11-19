@@ -280,8 +280,9 @@ private:
 
 	// 속도·이동 방향
 	void UpdateVelocity();
-	// 이동 중인지(멈춤 상태로 갈지)·공중인지. 멈출 때 발이 꼬였으면 마지막 한 걸음 클립을 재생한다
+	// 착지한 프레임에 LandRecoveryTime을 0으로 되돌린다
 	void UpdateLandRecovery(float DeltaSeconds);
+	// 이동 중인지(멈춤 상태로 갈지)·공중인지. 멈출 때 발이 꼬였으면 마지막 한 걸음 클립을 재생한다
 	void UpdateShouldMove();
 	// 가속 방향으로 몸 기울이기
 	void UpdateLean(float DeltaSeconds);

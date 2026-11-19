@@ -35,6 +35,7 @@ $UE = "C:\Program Files\Epic Games\UE_5.8\Engine"
 
 - Module: `Source/Hunt` (`Hunt.Build.cs`, deps: Core, CoreUObject, Engine, InputCore, EnhancedInput). Targets are `Source/Hunt.Target.cs` (Game) and `Source/HuntEditor.Target.cs` (Editor), both `BuildSettingsVersion.V7` / `EngineIncludeOrderVersion.Unreal5_8`.
 - Classes are grouped by feature subfolder, mirrored between `Public/` and `Private/` (e.g. `Public/Character/HuntCharacter.h` ↔ `Private/Character/HuntCharacter.cpp`). Includes use the subfolder path: `#include "Character/HuntCharacter.h"`. Exported classes use `HUNT_API`.
+- One class per header. Attachment code lives in `Weapon/Attachment/` (attachment definitions, `WeaponAttachmentComponent`); enums/structs shared by two or more attachment classes go in `Weapon/Attachment/AttachmentTypes.h`, types used by one class stay in that class's header.
 - Input uses **Enhanced Input** (`DefaultInput.ini` sets `EnhancedPlayerInput` / `EnhancedInputComponent`). Bind actions through `UEnhancedInputComponent` and Input Mapping Contexts rather than legacy axis/action mappings.
 - Content: `Content/Asset/Characters/Mannequins` holds the Manny/Quinn meshes and pistol/rifle/unarmed animation sets. `Content/Map/DefaultMap.umap` is the project map and the `GameDefaultMap`.
 

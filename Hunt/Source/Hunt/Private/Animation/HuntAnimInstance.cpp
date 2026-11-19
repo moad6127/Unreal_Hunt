@@ -5,7 +5,7 @@
 #include "Character/HuntCharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
-#include "Weapon/GripAttachmentDefinition.h"
+#include "Weapon/Attachment/GripAttachmentDefinition.h"
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Curves/CurveVector.h"

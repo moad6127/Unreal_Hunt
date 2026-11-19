@@ -13,6 +13,7 @@ const FHuntWeaponSlot* UWeaponDefinition::FindSlot(EHuntAttachmentSlot Slot) con
 	case EHuntAttachmentSlot::Magazine:    return bMagazine ? &Magazine : nullptr;
 	case EHuntAttachmentSlot::Stock:       return bStock ? &Stock : nullptr;
 	case EHuntAttachmentSlot::Tactical:    return bTactical ? &Tactical : nullptr;
+	case EHuntAttachmentSlot::Handguard:   return bHandguard ? &Handguard : nullptr;
 	}
 	return nullptr;
 }

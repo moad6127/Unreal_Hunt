@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Weapon/AttachmentDefinition.h"
+#include "Weapon/Attachment/AttachmentTypes.h"
 #include "WeaponDefinition.generated.h"
 
 class AHuntProjectile;
@@ -17,25 +17,6 @@ enum class EHuntFireMode : uint8
 {
 	Single,
 	Auto
-};
-
-// 총의 부착 슬롯 하나
-USTRUCT(BlueprintType)
-struct FHuntWeaponSlot
-{
-	GENERATED_BODY()
-
-	// 부착물을 달면 숨길 기본 부품 뼈(예: 탄창 b_gun_mag). 없으면 비워 둔다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FName HiddenBone;
-
-	// 총이 생성될 때 이 슬롯에 다는 부착물(Attachments 목록에 없어도 된다). 비우면 빈 슬롯
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TObjectPtr<UAttachmentDefinition> DefaultAttachment;
-
-	// 이 슬롯에 달 수 있는 부착물. 목록에 없는 부착물은 붙지 않는다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TArray<TObjectPtr<UAttachmentDefinition>> Attachments;
 };
 
 /**
@@ -89,6 +70,13 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bTactical"))
 	FHuntWeaponSlot Tactical;
+
+	// 핸드가드를 켜면 Underbarrel·Tactical은 보통 끄고 핸드가드 DA의 슬롯을 쓴다(총 슬롯이 켜져 있으면 총 슬롯이 먼저)
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
+	bool bHandguard = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bHandguard"))
+	FHuntWeaponSlot Handguard;
 
 	// 탄속·낙차는 발사체 BP에서 조정한다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")

@@ -74,7 +74,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh")
 	TObjectPtr<USkeletalMeshComponent> FirstPersonLegs;
 
-	// 조준 시 시야각(가늠쇠 기준. 스코프 배율은 M3에서)
+	// 조준 시 시야각(가늠쇠 기준. 스코프 배율은 M2 4단계에서)
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim", meta = (ClampMin = "5.0", ClampMax = "170.0"))
 	float AimFOV = 70.f;
 
@@ -118,10 +118,6 @@ protected:
 	// 기본 총에 총의 기본 부착물 대신 달 부착물. 총이 쓰지 않는 슬롯이거나 호환되지 않으면 붙지 않고 로그만 남는다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TArray<TObjectPtr<UAttachmentDefinition>> DefaultAttachments;
-
-	// 1인칭 오른손 기준점: ik_hand_gun 기준 위치(회전 없음). 총의 Socket_Grip이 여기에 온다. 총과 무관하게 손에 대해 한 번 정하는 값
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FVector FirstPersonWeaponOffset = FVector(-2.03f, -7.11f, 1.88f);
 
 	// 테스트용: false면 벽 앞에서도 총을 내리지 않는다. PIE 중 인스턴스에서도 바꿀 수 있다
 	UPROPERTY(EditAnywhere, Category = "Weapon")

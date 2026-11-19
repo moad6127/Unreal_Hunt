@@ -56,7 +56,7 @@ protected:
 	TObjectPtr<UWeaponAttachmentComponent> Attachments;
 
 private:
-	// 손잡이 부착물에 이 왼손 소켓이 있으면 손잡이 메시, 없으면 총 메시
+	// 이 왼손 소켓이 있는 메시: 손잡이 → 핸드가드 → 총 순서
 	const USceneComponent* GetLeftHandSocketComponent(FName SocketName) const;
 	// 총구에서 크로스헤어가 가리키는 점을 향해, 현재 탄퍼짐 안에서 발사체를 쏜다
 	void Shoot();

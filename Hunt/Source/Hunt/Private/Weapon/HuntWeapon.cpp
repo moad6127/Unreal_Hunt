@@ -3,9 +3,9 @@
 
 #include "Weapon/HuntWeapon.h"
 #include "Character/HuntCharacter.h"
-#include "Weapon/GripAttachmentDefinition.h"
+#include "Weapon/Attachment/GripAttachmentDefinition.h"
 #include "Weapon/HuntProjectile.h"
-#include "Weapon/WeaponAttachmentComponent.h"
+#include "Weapon/Attachment/WeaponAttachmentComponent.h"
 #include "Weapon/WeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -15,7 +15,7 @@
 
 namespace
 {
-	// shortcut: AR4의 총구 뼈 이름, 뼈 이름이 다른 총이 생기면 WeaponDefinition으로 옮긴다
+	// shortcut: AR4·M4 공통 총구 뼈 이름, 뼈 이름이 다른 총이 생기면 WeaponDefinition으로 옮긴다
 	const FName MuzzleBoneName(TEXT("b_gun_muzzleflash"));
 	// 총구 부착물 메시의 끝(탄이 나가는 곳). 총 메시의 같은 이름 소켓은 부착물이 붙는 자리라 다르다
 	const FName MuzzleSocketName(TEXT("Socket_Muzzle"));
@@ -94,8 +94,13 @@ bool AHuntWeapon::GetFirstPersonLeftHandGripLocation(FVector& OutLocation) const
 
 const USceneComponent* AHuntWeapon::GetLeftHandSocketComponent(FName SocketName) const
 {
-	const UStaticMeshComponent* Grip = Attachments->FindAttachmentSocketMesh(EHuntAttachmentSlot::Underbarrel, SocketName);
-	return Grip ? static_cast<const USceneComponent*>(Grip) : Mesh.Get();
+	// 손잡이 → 핸드가드 → 총 순서로 이 소켓이 있는 메시를 쓴다
+	const UStaticMeshComponent* Part = Attachments->FindAttachmentSocketMesh(EHuntAttachmentSlot::Underbarrel, SocketName);
+	if (!Part)
+	{
+		Part = Attachments->FindAttachmentSocketMesh(EHuntAttachmentSlot::Handguard, SocketName);
+	}
+	return Part ? static_cast<const USceneComponent*>(Part) : Mesh.Get();
 }
 
 FVector AHuntWeapon::GetRightHandGripOffset() const
@@ -200,7 +205,12 @@ FVector AHuntWeapon::GetSpawnLocation(const APawn* OwnerPawn) const
 {
 	// 1인칭 총은 줄여 그려 벽 앞에 보여도, 실제 총구(소켓)는 원래 크기 위치라 벽 너머에 있을 수 있다
 	// 총구 부착물(소음기 등)에 Socket_Muzzle(부착물 끝)이 있으면 거기서 나간다
+	// 없으면 핸드가드 총열 끝(Socket_Muzzle), 그것도 없으면 총 메시 총구 뼈
 	const UStaticMeshComponent* MuzzleAttachment = Attachments->FindAttachmentSocketMesh(EHuntAttachmentSlot::Muzzle, MuzzleSocketName);
+	if (!MuzzleAttachment)
+	{
+		MuzzleAttachment = Attachments->FindAttachmentSocketMesh(EHuntAttachmentSlot::Handguard, MuzzleSocketName);
+	}
 	const FVector MuzzleLocation = MuzzleAttachment ? MuzzleAttachment->GetSocketLocation(MuzzleSocketName) : Mesh->GetSocketLocation(MuzzleBoneName);
 	FVector ViewLocation;
 	FRotator ViewRotation;

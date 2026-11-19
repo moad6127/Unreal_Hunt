@@ -9,7 +9,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Weapon/HuntWeapon.h"
-#include "Weapon/WeaponAttachmentComponent.h"
+#include "Weapon/Attachment/WeaponAttachmentComponent.h"
 #include "Weapon/WeaponDefinition.h"
 
 namespace
@@ -22,9 +22,16 @@ namespace
 	const FName WeaponSocketName(TEXT("HandGrip_R"));
 	// 1인칭 팔에서 총을 붙일 뼈. LPSP 애니메이션은 총을 ik_hand_gun(SOCKET_Weapon)으로 움직이고 손은 그 총을 잡는다
 	const FName FirstPersonWeaponBone(TEXT("ik_hand_gun"));
+	// 1인칭 오른손 기준점: ik_hand_gun 기준 위치(회전 없음). 총의 Socket_Grip이 여기에 온다. 총과 무관하게 손에 대해 한 번 정하는 값
+	const FVector FirstPersonWeaponOffset(-2.03f, -7.11f, 1.88f);
+	// 내려다볼 때 카메라를 앞에 둘 기준 뼈
+	const FName PelvisBone(TEXT("pelvis"));
 
 	// 머리 뼈에서 시선 방향으로 얼마나 앞에 둘지(cm). 아래를 볼 때 하체 메시의 허리 잘린 면이 보이면 늘린다
 	constexpr float CameraForwardOffset = 15.f;
+	// 내려다볼수록 카메라를 골반보다 수평으로 최소 이만큼(cm, 똑바로 아래, 각도에 비례) 앞에 둔다. 상체가 덜 숙여지는 자세(대기 = ALS 시선 애디티브)에서도
+	// 카메라가 하체 메시 바로 위에 와서 허벅지 잘린 면이 보이지 않게 (PIE에서 맞춘 값)
+	constexpr float MinLeadOverPelvis = 40.f;
 	// 머리 위치를 따라가는 속도. 낮을수록 흔들림이 줄고 반응이 느려진다 (0 = 즉시)
 	constexpr float CameraFollowSpeed = 15.f;
 	// 총 킥이 목표 위치로 튀어 나가는 속도. 높을수록 한 발이 날카롭게 튄다
@@ -404,12 +411,10 @@ void AHuntCharacter::UpdateHeadCameraLocation(float DeltaSeconds)
 	const FVector AimDirection = GetControlRotation().Vector();
 	FVector HeadWorld = GetMesh()->GetSocketLocation(CameraHeadBone) + AimDirection * CameraForwardOffset;
 
-	// 내려다볼수록 카메라를 골반보다 수평으로 최소 40cm(똑바로 아래, 각도에 비례)만큼 앞에 둔다. 상체가 덜 숙여지는 자세(대기 = ALS 시선 애디티브)에서도
-	// 카메라가 하체 메시 바로 위에 와서 허벅지 잘린 면이 보이지 않게 (40은 PIE에서 맞춘 값)
-	constexpr float MinLeadOverPelvis = 40.f;
+	// 내려다볼수록 카메라를 골반보다 앞에 둔다(MinLeadOverPelvis)
 	const FVector YawForward = FRotator(0.f, GetControlRotation().Yaw, 0.f).Vector();
 	const float DownAlpha = FMath::Clamp(-FRotator::NormalizeAxis(GetControlRotation().Pitch) / 90.f, 0.f, 1.f);
-	const float Lead = FVector::DotProduct(HeadWorld - GetMesh()->GetSocketLocation(TEXT("pelvis")), YawForward);
+	const float Lead = FVector::DotProduct(HeadWorld - GetMesh()->GetSocketLocation(PelvisBone), YawForward);
 	HeadWorld += YawForward * FMath::Max(0.f, MinLeadOverPelvis * DownAlpha - Lead);
 
 	const FVector Target = CapsuleTransform.InverseTransformPosition(HeadWorld);
@@ -663,7 +668,7 @@ void AHuntCharacter::StartFire()
 		Stance = EHuntWeaponStance::Ready;
 		ReadyTimeLeft = ReadyHoldTime;
 	}
-	// 총이 아직 내려가 있으면 다 든 뒤 UpdateStance에서 쏜다
+	// 총이 아직 내려가 있으면 다 든 뒤 FireAfterRaise에서 쏜다
 	if (RelaxedAlpha > 0.f)
 	{
 		bFireAfterRaise = true;

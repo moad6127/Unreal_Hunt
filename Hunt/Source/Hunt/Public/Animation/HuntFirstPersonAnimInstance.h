@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
-#include "Weapon/GripAttachmentDefinition.h"
+#include "Weapon/Attachment/AttachmentTypes.h"
 #include "HuntFirstPersonAnimInstance.generated.h"
 
 class AHuntCharacter;

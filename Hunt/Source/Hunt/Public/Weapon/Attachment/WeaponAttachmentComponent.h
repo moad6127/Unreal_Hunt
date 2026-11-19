@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Weapon/AttachmentDefinition.h"
+#include "Weapon/Attachment/AttachmentDefinition.h"
 #include "WeaponAttachmentComponent.generated.h"
 
 class UStaticMeshComponent;
@@ -31,6 +31,9 @@ public:
 	const UAttachmentDefinition* GetEquippedAttachment(EHuntAttachmentSlot Slot) const { return EquippedAttachments.FindRef(Slot); }
 
 private:
+	// 핸드가드를 바꾼 뒤 다른 부착물을 다시 달아 새 핸드가드 소켓으로 옮기고, 맞지 않으면(하부 부착물) 뗀다
+	void ReattachAfterHandguardChange();
+
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Attachment")
 	TMap<EHuntAttachmentSlot, TObjectPtr<UAttachmentDefinition>> EquippedAttachments;
 

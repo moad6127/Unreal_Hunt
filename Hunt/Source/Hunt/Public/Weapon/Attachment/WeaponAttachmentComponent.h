@@ -30,6 +30,9 @@ public:
 	// 그 슬롯에 달린 부착물 (없으면 nullptr)
 	const UAttachmentDefinition* GetEquippedAttachment(EHuntAttachmentSlot Slot) const { return EquippedAttachments.FindRef(Slot); }
 
+	// 장착된 부착물 전체(핸드가드 자식 포함)의 스탯 배율을 곱한 값
+	FHuntAttachmentStats ComputeFinalStats() const;
+
 private:
 	// 핸드가드를 바꾼 뒤 다른 부착물을 다시 달아 새 핸드가드 소켓으로 옮기고, 맞지 않으면(하부 부착물) 뗀다
 	void ReattachAfterHandguardChange();

@@ -28,4 +28,7 @@ public:
 	// 소켓에서 총 앞(+)·뒤(-)로 옮겨 붙일 거리(cm). 레일에 다는 부착물의 길이 차이를 맞춘다(예: 긴 조준경 +, 레드도트 -)
 	UPROPERTY(EditDefaultsOnly, Category = "Attachment", meta = (Units = "cm"))
 	float MountOffset = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Stats", meta = (ShowOnlyInnerProperties))
+	FHuntAttachmentStats Stats;
 };

@@ -131,6 +131,21 @@ void UWeaponAttachmentComponent::EquipDefaultAttachments()
 	}
 }
 
+FHuntAttachmentStats UWeaponAttachmentComponent::ComputeFinalStats() const
+{
+	// 핸드가드 자식도 같은 맵에 슬롯별로 들어 있어 한 번만 돈다
+	FHuntAttachmentStats Final;
+	for (const TPair<EHuntAttachmentSlot, TObjectPtr<UAttachmentDefinition>>& Pair : EquippedAttachments)
+	{
+		const FHuntAttachmentStats& Stats = Pair.Value->Stats;
+		Final.VerticalRecoil *= Stats.VerticalRecoil;
+		Final.HorizontalRecoil *= Stats.HorizontalRecoil;
+		Final.Spread *= Stats.Spread;
+		Final.AimDownSightsTime *= Stats.AimDownSightsTime;
+	}
+	return Final;
+}
+
 const UStaticMeshComponent* UWeaponAttachmentComponent::FindAttachmentSocketMesh(EHuntAttachmentSlot Slot, FName SocketName) const
 {
 	const TObjectPtr<UStaticMeshComponent>* MeshComponent = AttachmentMeshes.Find(Slot);

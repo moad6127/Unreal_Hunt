@@ -266,7 +266,9 @@ void AHuntWeapon::ApplyRecoilToOwner()
 
 	const float HipMultiplier = FMath::Lerp(Definition->HipFireRecoilMultiplier, 1.f, Character->GetAimBlend());
 	const float Multiplier = (bFirstShot ? Definition->FirstShotRecoilMultiplier : 1.f) * HipMultiplier;
-	const float Yaw = FMath::FRandRange(-Definition->HorizontalRecoil, Definition->HorizontalRecoil);
-	Character->AddRecoil(FRotator(Definition->VerticalRecoil, Yaw, 0.f) * Multiplier);
+	const FHuntAttachmentStats Stats = Attachments->ComputeFinalStats();
+	const float HorizontalRecoil = Definition->HorizontalRecoil * Stats.HorizontalRecoil;
+	const float Yaw = FMath::FRandRange(-HorizontalRecoil, HorizontalRecoil);
+	Character->AddRecoil(FRotator(Definition->VerticalRecoil * Stats.VerticalRecoil, Yaw, 0.f) * Multiplier);
 	Character->AddWeaponKick();
 }

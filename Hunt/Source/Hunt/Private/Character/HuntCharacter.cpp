@@ -261,7 +261,8 @@ float AHuntCharacter::GetCurrentSpread() const
 	// 걸음 상태마다 MaxWalkSpeed가 바뀌므로 질주 속도를 최대 속도로 삼는다
 	const float MoveAlpha = FMath::Clamp(GetVelocity().Size2D() / SprintSpeed, 0.f, 1.f);
 	const float GroundSpread = FMath::Lerp(Definition->HipSpread, Definition->MovingSpread, MoveAlpha);
-	return FMath::Lerp(GroundSpread, Definition->AirSpread, AirSpreadAlpha) * (1.f - GetAimBlend());
+	const float SpreadScale = EquippedWeapon->GetAttachments()->ComputeFinalStats().Spread;
+	return FMath::Lerp(GroundSpread, Definition->AirSpread, AirSpreadAlpha) * SpreadScale * (1.f - GetAimBlend());
 }
 
 void AHuntCharacter::UpdateWallBlock(float DeltaSeconds)
@@ -467,7 +468,9 @@ void AHuntCharacter::UpdateAimAlpha(float DeltaSeconds)
 	const UWeaponDefinition* Definition = GetWeaponDefinition();
 	const bool bCanAim = Definition && !GetCharacterMovement()->IsFalling() && WallBlockAlpha < 0.1f;
 	const float AimTarget = (Stance == EHuntWeaponStance::Aiming && bCanAim) ? 1.f : 0.f;
-	const float AimSpeed = Definition ? 1.f / Definition->AimDownSightsTime : 10.f;
+	// 부착물 조준 시간 배율은 조준할 때만. 풀 때는 총 기본값이라 부착물과 상관없이 같다
+	const float AimTimeScale = AimTarget > 0.f ? EquippedWeapon->GetAttachments()->ComputeFinalStats().AimDownSightsTime : 1.f;
+	const float AimSpeed = Definition ? 1.f / (Definition->AimDownSightsTime * AimTimeScale) : 10.f;
 	AimAlpha = FMath::FInterpConstantTo(AimAlpha, AimTarget, DeltaSeconds, AimSpeed);
 }
 
@@ -600,8 +603,10 @@ void AHuntCharacter::AddWeaponKick()
 	}
 
 	// 카메라 기준: -X = 뒤(얼굴 쪽), Pitch + = 총구 위
-	KickTargetLocation.X -= Definition->KickBack;
-	KickTargetRotation += FRotator(Definition->KickPitch, FMath::FRandRange(-Definition->KickYaw, Definition->KickYaw), 0.f);
+	const FHuntAttachmentStats Stats = EquippedWeapon->GetAttachments()->ComputeFinalStats();
+	const float KickYaw = Definition->KickYaw * Stats.HorizontalRecoil;
+	KickTargetLocation.X -= Definition->KickBack * Stats.VerticalRecoil;
+	KickTargetRotation += FRotator(Definition->KickPitch * Stats.VerticalRecoil, FMath::FRandRange(-KickYaw, KickYaw), 0.f);
 }
 
 void AHuntCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

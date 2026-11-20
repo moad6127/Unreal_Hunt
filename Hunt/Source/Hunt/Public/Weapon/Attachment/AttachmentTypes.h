@@ -43,6 +43,29 @@ struct FHuntWeaponSlot
 	TArray<TObjectPtr<UAttachmentDefinition>> Attachments;
 };
 
+// 부착물 스탯 배율. 총(UWeaponDefinition) 값에 곱하고, 장착된 부착물끼리도 곱한다. 1 = 변화 없음
+USTRUCT(BlueprintType)
+struct FHuntAttachmentStats
+{
+	GENERATED_BODY()
+
+	// VerticalRecoil, KickBack, KickPitch에 곱한다
+	UPROPERTY(EditDefaultsOnly, Category = "Stats", meta = (ClampMin = "0.0"))
+	float VerticalRecoil = 1.f;
+
+	// HorizontalRecoil, KickYaw에 곱한다
+	UPROPERTY(EditDefaultsOnly, Category = "Stats", meta = (ClampMin = "0.0"))
+	float HorizontalRecoil = 1.f;
+
+	// HipSpread, MovingSpread, AirSpread에 곱한다
+	UPROPERTY(EditDefaultsOnly, Category = "Stats", meta = (ClampMin = "0.0"))
+	float Spread = 1.f;
+
+	// AimDownSightsTime에 곱한다(작을수록 조준이 빠름)
+	UPROPERTY(EditDefaultsOnly, Category = "Stats", meta = (ClampMin = "0.1"))
+	float AimDownSightsTime = 1.f;
+};
+
 // 1인칭 왼손 그립 포즈 3개. 손 모양·팔꿈치를 정하고, 손목 위치는 IK가 Socket_LeftHand_FP에 맞춘다
 USTRUCT(BlueprintType)
 struct FHuntGripPoses

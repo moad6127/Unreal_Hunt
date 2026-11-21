@@ -178,14 +178,9 @@ void AHuntCharacter::EquipDefaultWeapon()
 	BodyWeapon = SpawnWeapon();
 	AttachBodyWeapon();
 
-	// 부착물 메시가 총의 1인칭 렌더 설정을 따르므로 붙인 뒤에 장착한다. 총의 기본 부착물을 먼저 달고 DefaultAttachments로 바꿔 단다
+	// 부착물 메시가 총의 1인칭 렌더 설정을 따르므로 붙인 뒤에 장착한다
 	EquippedWeapon->GetAttachments()->EquipDefaultAttachments();
 	BodyWeapon->GetAttachments()->EquipDefaultAttachments();
-	for (UAttachmentDefinition* Attachment : DefaultAttachments)
-	{
-		EquippedWeapon->GetAttachments()->EquipAttachment(Attachment);
-		BodyWeapon->GetAttachments()->EquipAttachment(Attachment);
-	}
 
 	UpdateWeaponVisibility();
 }

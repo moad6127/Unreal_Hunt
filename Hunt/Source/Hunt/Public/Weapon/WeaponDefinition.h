@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "GameplayTagContainer.h"
 #include "Weapon/Attachment/AttachmentTypes.h"
 #include "WeaponDefinition.generated.h"
 
@@ -33,6 +34,10 @@ public:
 
 	// 슬롯이 켜져 있으면 그 슬롯을 반환, 꺼져 있으면 nullptr
 	const FHuntWeaponSlot* FindSlot(EHuntAttachmentSlot Slot) const;
+
+	// 총 바디가 주는 태그(예: Weapon.M4, Weapon.Feature.Rail.Top). 총의 태그 = 이것 + 장착된 부착물의 태그
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments")
+	FGameplayTagContainer GrantedTags;
 
 	// 부착 슬롯. 체크를 끈 슬롯에는 아무것도 붙지 않는다
 	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
@@ -71,12 +76,19 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bTactical"))
 	FHuntWeaponSlot Tactical;
 
-	// 핸드가드를 켜면 Underbarrel·Tactical은 보통 끄고 핸드가드 DA의 슬롯을 쓴다(총 슬롯이 켜져 있으면 총 슬롯이 먼저)
 	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
 	bool bHandguard = false;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bHandguard"))
 	FHuntWeaponSlot Handguard;
+
+	// 총이 생성될 때 달고 나오는 부착물(출고 상태). 장착할 부착물을 정하는 곳은 여기 하나다. 필수 슬롯 것이 먼저 달린다
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments")
+	TArray<TObjectPtr<UAttachmentDefinition>> DefaultAttachments;
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 	// 탄속·낙차는 발사체 BP에서 조정한다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")

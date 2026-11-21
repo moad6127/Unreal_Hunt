@@ -7,7 +7,8 @@
 #include "HandguardAttachmentDefinition.generated.h"
 
 /**
- * 핸드가드(몸체 부품). 레일이 있는 핸드가드만 하부 슬롯을 켠다. 하부 부착물은 이 핸드가드 메시의 Socket_<슬롯>에 붙는다
+ * 핸드가드(필수 부품). 하부 장비를 열지는 GrantedTags(레일 태그)가 정하고, 하부 장비는 이 메시의 Socket_<슬롯>에 붙는다.
+ * 핸드가드 전용 필드는 아직 없다(기존 DA가 이 클래스라 남겨 둔다)
  */
 UCLASS()
 class HUNT_API UHandguardAttachmentDefinition : public UAttachmentDefinition
@@ -16,27 +17,4 @@ class HUNT_API UHandguardAttachmentDefinition : public UAttachmentDefinition
 
 public:
 	UHandguardAttachmentDefinition() { Slot = EHuntAttachmentSlot::Handguard; }
-
-	// 슬롯이 켜져 있으면 그 슬롯을 반환, 꺼져 있으면 nullptr
-	const FHuntWeaponSlot* FindSlot(EHuntAttachmentSlot InSlot) const
-	{
-		switch (InSlot)
-		{
-		case EHuntAttachmentSlot::Underbarrel: return bUnderbarrel ? &Underbarrel : nullptr;
-		case EHuntAttachmentSlot::Tactical:    return bTactical ? &Tactical : nullptr;
-		default:                               return nullptr;
-		}
-	}
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
-	bool bUnderbarrel = false;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bUnderbarrel"))
-	FHuntWeaponSlot Underbarrel;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
-	bool bTactical = false;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bTactical"))
-	FHuntWeaponSlot Tactical;
 };

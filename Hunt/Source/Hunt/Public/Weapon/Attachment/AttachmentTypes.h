@@ -5,12 +5,14 @@
 // 부착물 시스템에서 두 곳 이상이 같이 쓰는 enum·구조체. 한 클래스만 쓰는 타입은 그 클래스 헤더에 둔다
 
 #include "CoreMinimal.h"
+#include "NativeGameplayTags.h"
 #include "AttachmentTypes.generated.h"
 
 class UAnimSequence;
 class UAttachmentDefinition;
 
-// 부착 슬롯. 게임 전체에 하나의 목록이고, 총마다 쓸 수 있는 슬롯만 켠다. 총 메시 소켓 이름은 Socket_<슬롯 이름>
+// 부착 슬롯. 게임 전체에 하나의 목록이고, 총마다 쓸 수 있는 슬롯만 켠다. 소켓 이름은 Socket_<슬롯 이름>,
+// 종류 태그는 GetAttachmentSlotTag(슬롯을 추가하면 태그도 추가)
 UENUM(BlueprintType)
 enum class EHuntAttachmentSlot : uint8
 {
@@ -20,27 +22,34 @@ enum class EHuntAttachmentSlot : uint8
 	Magazine,
 	Stock,
 	Tactical,
-	// 몸체 부품. 핸드가드가 Underbarrel·Tactical 슬롯을 연다(UHandguardAttachmentDefinition)
 	Handguard
 };
 
-// 부착 슬롯 하나의 설정. 총(UWeaponDefinition)과 핸드가드(UHandguardAttachmentDefinition)가 같이 쓴다
+// 부착물 종류 태그. 장착된 부착물이 총에 자동으로 준다(코드가 쓰는 태그라 네이티브, 데이터 전용 태그는 Config/DefaultGameplayTags.ini)
+HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Optic);
+HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Muzzle);
+HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Underbarrel);
+HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Magazine);
+HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Stock);
+HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Tactical);
+HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Handguard);
+
+// 슬롯의 종류 태그
+HUNT_API FGameplayTag GetAttachmentSlotTag(EHuntAttachmentSlot Slot);
+
+// 총(UWeaponDefinition)의 부착 슬롯 하나. 무엇을 달 수 있는지는 슬롯이 아니라 태그가 정한다(UAttachmentDefinition::RequiredTags)
 USTRUCT(BlueprintType)
 struct FHuntWeaponSlot
 {
 	GENERATED_BODY()
 
+	// 필수 부품(핸드가드·개머리판·탄창 등). 하위 부착물보다 먼저 달리고, 바뀌면 하위 부착물을 다시 검사한다. M3부터 비울 수 없음
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	bool bRequired = false;
+
 	// 부착물을 달면 숨길 기본 부품 뼈(예: 탄창 b_gun_mag). 없으면 비워 둔다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	FName HiddenBone;
-
-	// 총이 생성될 때 이 슬롯에 다는 부착물(Attachments 목록에 없어도 된다). 비우면 빈 슬롯
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TObjectPtr<UAttachmentDefinition> DefaultAttachment;
-
-	// 이 슬롯에 달 수 있는 부착물. 목록에 없는 부착물은 붙지 않는다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TArray<TObjectPtr<UAttachmentDefinition>> Attachments;
 };
 
 // 부착물 스탯 배율. 총(UWeaponDefinition) 값에 곱하고, 장착된 부착물끼리도 곱한다. 1 = 변화 없음

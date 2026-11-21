@@ -94,13 +94,8 @@ bool AHuntWeapon::GetFirstPersonLeftHandGripLocation(FVector& OutLocation) const
 
 const USceneComponent* AHuntWeapon::GetLeftHandSocketComponent(FName SocketName) const
 {
-	// 손잡이 → 핸드가드 → 총 순서로 이 소켓이 있는 메시를 쓴다
-	const UStaticMeshComponent* Part = Attachments->FindAttachmentSocketMesh(EHuntAttachmentSlot::Underbarrel, SocketName);
-	if (!Part)
-	{
-		Part = Attachments->FindAttachmentSocketMesh(EHuntAttachmentSlot::Handguard, SocketName);
-	}
-	return Part ? static_cast<const USceneComponent*>(Part) : Mesh.Get();
+	// 손잡이 → 필수 부품(핸드가드) → 총 순서로 이 소켓이 있는 메시를 쓴다
+	return Attachments->FindSocketComponent(EHuntAttachmentSlot::Underbarrel, SocketName);
 }
 
 FVector AHuntWeapon::GetRightHandGripOffset() const
@@ -205,13 +200,9 @@ FVector AHuntWeapon::GetSpawnLocation(const APawn* OwnerPawn) const
 {
 	// 1인칭 총은 줄여 그려 벽 앞에 보여도, 실제 총구(소켓)는 원래 크기 위치라 벽 너머에 있을 수 있다
 	// 총구 부착물(소음기 등)에 Socket_Muzzle(부착물 끝)이 있으면 거기서 나간다
-	// 없으면 핸드가드 총열 끝(Socket_Muzzle), 그것도 없으면 총 메시 총구 뼈
-	const UStaticMeshComponent* MuzzleAttachment = Attachments->FindAttachmentSocketMesh(EHuntAttachmentSlot::Muzzle, MuzzleSocketName);
-	if (!MuzzleAttachment)
-	{
-		MuzzleAttachment = Attachments->FindAttachmentSocketMesh(EHuntAttachmentSlot::Handguard, MuzzleSocketName);
-	}
-	const FVector MuzzleLocation = MuzzleAttachment ? MuzzleAttachment->GetSocketLocation(MuzzleSocketName) : Mesh->GetSocketLocation(MuzzleBoneName);
+	// 없으면 필수 부품(핸드가드 총열 끝)의 Socket_Muzzle, 그것도 없으면 총 메시 총구 뼈
+	const USceneComponent* MuzzleComponent = Attachments->FindSocketComponent(EHuntAttachmentSlot::Muzzle, MuzzleSocketName);
+	const FVector MuzzleLocation = MuzzleComponent != Mesh ? MuzzleComponent->GetSocketLocation(MuzzleSocketName) : Mesh->GetSocketLocation(MuzzleBoneName);
 	FVector ViewLocation;
 	FRotator ViewRotation;
 	GetOwnerViewPoint(OwnerPawn, ViewLocation, ViewRotation);

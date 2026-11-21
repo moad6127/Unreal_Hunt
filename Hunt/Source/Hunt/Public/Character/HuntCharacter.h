@@ -7,7 +7,6 @@
 #include "HuntCharacter.generated.h"
 
 class AHuntWeapon;
-class UAttachmentDefinition;
 class UCameraComponent;
 class UInputAction;
 class UWeaponDefinition;
@@ -114,10 +113,6 @@ protected:
 	// BeginPlay에서 이 총을 스폰해 손에 든다. 비워두면 맨손
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UWeaponDefinition> DefaultWeapon;
-
-	// 기본 총에 총의 기본 부착물 대신 달 부착물. 총이 쓰지 않는 슬롯이거나 호환되지 않으면 붙지 않고 로그만 남는다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TArray<TObjectPtr<UAttachmentDefinition>> DefaultAttachments;
 
 	// 테스트용: false면 벽 앞에서도 총을 내리지 않는다. PIE 중 인스턴스에서도 바꿀 수 있다
 	UPROPERTY(EditAnywhere, Category = "Weapon")

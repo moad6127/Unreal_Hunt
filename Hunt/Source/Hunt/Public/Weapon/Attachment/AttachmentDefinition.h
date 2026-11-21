@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "GameplayTagContainer.h"
 #include "Weapon/Attachment/AttachmentTypes.h"
 #include "AttachmentDefinition.generated.h"
 
@@ -18,10 +19,23 @@ class HUNT_API UAttachmentDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	// 종류 태그 Attachment.<Slot>을 자동으로 총에 준다
 	UPROPERTY(EditDefaultsOnly, Category = "Attachment")
 	EHuntAttachmentSlot Slot = EHuntAttachmentSlot::Optic;
 
-	// 총 메시의 Socket_<Slot>에 붙는다
+	// 장착하면 총에 더해지는 태그(예: 레일 핸드가드 Weapon.Feature.Rail.Bottom, 소음기 Weapon.Feature.Suppressed)
+	UPROPERTY(EditDefaultsOnly, Category = "Tags")
+	FGameplayTagContainer GrantedTags;
+
+	// 총에 모두 있어야 달린다. 총 바디와 필수 부품이 주는 태그만 요구한다(하위 부착물끼리 요구하지 않는다)
+	UPROPERTY(EditDefaultsOnly, Category = "Tags")
+	FGameplayTagContainer RequiredTags;
+
+	// 총에 하나라도 있으면 달리지 않는다. 이미 달린 부착물의 BlockedTags에 걸려도 달리지 않는다
+	UPROPERTY(EditDefaultsOnly, Category = "Tags")
+	FGameplayTagContainer BlockedTags;
+
+	// 장착된 부착물 메시 중 Socket_<Slot>이 있는 것에, 없으면 총 메시에 붙는다
 	UPROPERTY(EditDefaultsOnly, Category = "Attachment")
 	TObjectPtr<UStaticMesh> Mesh;
 

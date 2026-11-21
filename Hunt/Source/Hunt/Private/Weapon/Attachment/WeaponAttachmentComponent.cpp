@@ -4,9 +4,19 @@
 #include "Weapon/Attachment/WeaponAttachmentComponent.h"
 #include "Weapon/HuntWeapon.h"
 #include "Weapon/WeaponDefinition.h"
-#include "Weapon/Attachment/HandguardAttachmentDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+
+namespace
+{
+	// 부착물이 총에 주는 태그: GrantedTags + 종류 태그 Attachment.<Slot>
+	FGameplayTagContainer GetAttachmentTags(const UAttachmentDefinition* Attachment)
+	{
+		FGameplayTagContainer Tags = Attachment->GrantedTags;
+		Tags.AddTag(GetAttachmentSlotTag(Attachment->Slot));
+		return Tags;
+	}
+}
 
 bool UWeaponAttachmentComponent::EquipAttachment(UAttachmentDefinition* Attachment)
 {
@@ -17,40 +27,34 @@ bool UWeaponAttachmentComponent::EquipAttachment(UAttachmentDefinition* Attachme
 		return false;
 	}
 
-	// 슬롯을 가진 부모: 총에 켜진 슬롯이면 총, 아니면 장착된 핸드가드(2층). 부착물은 부모 메시의 소켓에 붙는다
-	USkeletalMeshComponent* WeaponMesh = Weapon->GetMesh();
-	USceneComponent* ParentMesh = WeaponMesh;
-	const UObject* Parent = WeaponDefinition;
 	const FHuntWeaponSlot* WeaponSlot = WeaponDefinition->FindSlot(Attachment->Slot);
-	const UHandguardAttachmentDefinition* Handguard = Cast<UHandguardAttachmentDefinition>(EquippedAttachments.FindRef(EHuntAttachmentSlot::Handguard));
-	if (!WeaponSlot && Handguard)
-	{
-		WeaponSlot = Handguard->FindSlot(Attachment->Slot);
-		ParentMesh = AttachmentMeshes.FindRef(EHuntAttachmentSlot::Handguard);
-		Parent = Handguard;
-	}
 	if (!WeaponSlot)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("%s: %s에는 %s 슬롯이 없어 장착하지 않음"),
-			*Attachment->GetName(), *Parent->GetName(), *UEnum::GetValueAsString(Attachment->Slot));
+			*Attachment->GetName(), *WeaponDefinition->GetName(), *UEnum::GetValueAsString(Attachment->Slot));
 		return false;
 	}
-	if (!WeaponSlot->Attachments.Contains(Attachment) && WeaponSlot->DefaultAttachment != Attachment)
+	FString Reason;
+	if (!CanEquipByTags(Attachment, Reason))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("%s: %s의 허용 부착물 목록에 없어 장착하지 않음"), *Attachment->GetName(), *Parent->GetName());
+		UE_LOG(LogTemp, Warning, TEXT("%s: %s 장착하지 않음"), *Attachment->GetName(), *Reason);
 		return false;
 	}
 
+	// 하위 부착물은 필수 부품 메시(예: 핸드가드)에 같은 소켓이 있으면 거기에, 없으면 총 메시에 붙는다
 	const FName SocketName(*FString::Printf(TEXT("Socket_%s"), *StaticEnum<EHuntAttachmentSlot>()->GetNameStringByValue(static_cast<int64>(Attachment->Slot))));
-	// 총 슬롯이라도 장착된 핸드가드 메시에 같은 소켓이 있으면 그쪽에 붙인다(총열이 핸드가드에 있어 총구 위치가 핸드가드마다 다름)
-	UStaticMeshComponent* HandguardMesh = AttachmentMeshes.FindRef(EHuntAttachmentSlot::Handguard);
-	if (ParentMesh == WeaponMesh && Attachment->Slot != EHuntAttachmentSlot::Handguard && HandguardMesh && HandguardMesh->DoesSocketExist(SocketName))
+	USkeletalMeshComponent* WeaponMesh = Weapon->GetMesh();
+	USceneComponent* ParentMesh = WeaponMesh;
+	if (!WeaponSlot->bRequired)
 	{
-		ParentMesh = HandguardMesh;
+		if (UStaticMeshComponent* PartMesh = FindRequiredPartSocketMesh(SocketName))
+		{
+			ParentMesh = PartMesh;
+		}
 	}
 	if (!ParentMesh->DoesSocketExist(SocketName))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("%s: %s 메시에 %s 소켓이 없어 장착하지 않음"), *Attachment->GetName(), *Parent->GetName(), *SocketName.ToString());
+		UE_LOG(LogTemp, Warning, TEXT("%s: %s 소켓이 없어 장착하지 않음"), *Attachment->GetName(), *SocketName.ToString());
 		return false;
 	}
 
@@ -61,7 +65,7 @@ bool UWeaponAttachmentComponent::EquipAttachment(UAttachmentDefinition* Attachme
 		MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MeshComponent->RegisterComponent();
 	}
-	// 핸드가드가 바뀌면 하부 부착물의 부모 메시도 바뀌므로 장착할 때마다 다시 붙인다
+	// 필수 부품이 바뀌면 하위 부착물의 부모 메시도 바뀌므로 장착할 때마다 다시 붙인다
 	MeshComponent->AttachToComponent(ParentMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
 	// 1인칭 팔 총이면 1인칭 렌더, 전신 총이면 내 화면에서 그림자만 남게 총 메시를 따른다
 	MeshComponent->SetFirstPersonPrimitiveType(WeaponMesh->FirstPersonPrimitiveType);
@@ -77,27 +81,76 @@ bool UWeaponAttachmentComponent::EquipAttachment(UAttachmentDefinition* Attachme
 
 	EquippedAttachments.Add(Attachment->Slot, Attachment);
 
-	if (Attachment->Slot == EHuntAttachmentSlot::Handguard)
+	if (WeaponSlot->bRequired)
 	{
-		ReattachAfterHandguardChange();
+		RecheckOptionalAttachments();
 	}
 	return true;
 }
 
-void UWeaponAttachmentComponent::ReattachAfterHandguardChange()
+bool UWeaponAttachmentComponent::CanEquipByTags(const UAttachmentDefinition* Attachment, FString& OutReason) const
 {
-	// 하부 부착물뿐 아니라 핸드가드 소켓을 쓰는 총 슬롯(총구)도 있으므로 핸드가드 외 전부 다시 단다
-	TArray<TObjectPtr<UAttachmentDefinition>> Others;
-	EquippedAttachments.GenerateValueArray(Others);
-	for (UAttachmentDefinition* Child : Others)
+	const UWeaponDefinition* WeaponDefinition = GetOwner<AHuntWeapon>()->Definition;
+
+	// 총의 태그 = 총 바디 + 장착된 부착물. 같은 슬롯에서 교체될 부착물은 뺀다.
+	// RequiredTags는 바디·필수 부품 태그로만 판단한다(하위 부착물이 준 태그로 붙으면 장착 순서에 따라 결과가 달라진다)
+	FGameplayTagContainer WeaponTags = WeaponDefinition->GrantedTags;
+	FGameplayTagContainer BaseTags = WeaponDefinition->GrantedTags;
+	for (const TPair<EHuntAttachmentSlot, TObjectPtr<UAttachmentDefinition>>& Pair : EquippedAttachments)
 	{
-		const EHuntAttachmentSlot ChildSlot = Child->Slot;
-		// 다시 장착해 새 핸드가드 소켓으로 옮긴다. 새 핸드가드에 맞지 않으면(거부 로그가 남음) 뗀다
-		if (ChildSlot != EHuntAttachmentSlot::Handguard && !EquipAttachment(Child))
+		if (Pair.Key != Attachment->Slot)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("%s: 핸드가드가 바뀌어 떼어 냄"), *Child->GetName());
-			EquippedAttachments.Remove(ChildSlot);
-			if (TObjectPtr<UStaticMeshComponent> MeshComponent = AttachmentMeshes.FindAndRemoveChecked(ChildSlot))
+			const FGameplayTagContainer PartTags = GetAttachmentTags(Pair.Value);
+			WeaponTags.AppendTags(PartTags);
+			const FHuntWeaponSlot* PartSlot = WeaponDefinition->FindSlot(Pair.Key);
+			if (PartSlot && PartSlot->bRequired)
+			{
+				BaseTags.AppendTags(PartTags);
+			}
+		}
+	}
+
+	for (const FGameplayTag& Tag : Attachment->RequiredTags)
+	{
+		if (!BaseTags.HasTag(Tag))
+		{
+			OutReason = FString::Printf(TEXT("총 바디·필수 부품에 %s 태그가 없어"), *Tag.ToString());
+			return false;
+		}
+	}
+	if (WeaponTags.HasAny(Attachment->BlockedTags))
+	{
+		OutReason = FString::Printf(TEXT("총의 태그가 BlockedTags(%s)에 걸려"), *Attachment->BlockedTags.ToStringSimple());
+		return false;
+	}
+	// 이미 달린 부착물이 이 부착물의 태그를 막는지(양방향)
+	const FGameplayTagContainer NewTags = GetAttachmentTags(Attachment);
+	for (const TPair<EHuntAttachmentSlot, TObjectPtr<UAttachmentDefinition>>& Pair : EquippedAttachments)
+	{
+		if (Pair.Key != Attachment->Slot && NewTags.HasAny(Pair.Value->BlockedTags))
+		{
+			OutReason = FString::Printf(TEXT("%s의 BlockedTags에 걸려"), *Pair.Value->GetName());
+			return false;
+		}
+	}
+	return true;
+}
+
+void UWeaponAttachmentComponent::RecheckOptionalAttachments()
+{
+	// 필수 부품이 바뀌면 하위 부착물을 다시 달아 새 부품의 소켓으로 옮기고, 태그가 맞지 않으면(예: 레일 없는 핸드가드의 손잡이) 뗀다.
+	// 하위 부착물은 총 바디·필수 부품의 태그만 요구하므로 여기서 한 번만 돌면 된다
+	const UWeaponDefinition* WeaponDefinition = GetOwner<AHuntWeapon>()->Definition;
+	TArray<TObjectPtr<UAttachmentDefinition>> Equipped;
+	EquippedAttachments.GenerateValueArray(Equipped);
+	for (UAttachmentDefinition* Child : Equipped)
+	{
+		const FHuntWeaponSlot* ChildSlot = WeaponDefinition->FindSlot(Child->Slot);
+		if (ChildSlot && !ChildSlot->bRequired && !EquipAttachment(Child))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("%s: 필수 부품이 바뀌어 떼어 냄"), *Child->GetName());
+			EquippedAttachments.Remove(Child->Slot);
+			if (TObjectPtr<UStaticMeshComponent> MeshComponent = AttachmentMeshes.FindAndRemoveChecked(Child->Slot))
 			{
 				MeshComponent->DestroyComponent();
 			}
@@ -114,26 +167,23 @@ void UWeaponAttachmentComponent::EquipDefaultAttachments()
 		return;
 	}
 
-	// 하부 슬롯이 핸드가드에 있으므로 핸드가드를 먼저 단다
-	if (const FHuntWeaponSlot* HandguardSlot = WeaponDefinition->FindSlot(EHuntAttachmentSlot::Handguard); HandguardSlot && HandguardSlot->DefaultAttachment)
+	// 하위 부착물이 필수 부품의 태그·소켓을 쓰므로 목록 순서와 상관없이 필수 부품을 먼저 단다
+	for (const bool bRequiredPass : { true, false })
 	{
-		EquipAttachment(HandguardSlot->DefaultAttachment);
-	}
-
-	const UEnum* SlotEnum = StaticEnum<EHuntAttachmentSlot>();
-	for (int32 Index = 0; Index < SlotEnum->NumEnums() - 1; ++Index) // 마지막은 자동 생성된 _MAX
-	{
-		const FHuntWeaponSlot* WeaponSlot = WeaponDefinition->FindSlot(static_cast<EHuntAttachmentSlot>(SlotEnum->GetValueByIndex(Index)));
-		if (WeaponSlot && WeaponSlot->DefaultAttachment && WeaponSlot->DefaultAttachment->Slot != EHuntAttachmentSlot::Handguard)
+		for (UAttachmentDefinition* Attachment : WeaponDefinition->DefaultAttachments)
 		{
-			EquipAttachment(WeaponSlot->DefaultAttachment);
+			const FHuntWeaponSlot* Slot = Attachment ? WeaponDefinition->FindSlot(Attachment->Slot) : nullptr;
+			if (Attachment && (Slot && Slot->bRequired) == bRequiredPass)
+			{
+				EquipAttachment(Attachment);
+			}
 		}
 	}
 }
 
 FHuntAttachmentStats UWeaponAttachmentComponent::ComputeFinalStats() const
 {
-	// 핸드가드 자식도 같은 맵에 슬롯별로 들어 있어 한 번만 돈다
+	// 필수 부품·하위 부착물이 모두 같은 맵에 슬롯별로 들어 있어 한 번만 돈다
 	FHuntAttachmentStats Final;
 	for (const TPair<EHuntAttachmentSlot, TObjectPtr<UAttachmentDefinition>>& Pair : EquippedAttachments)
 	{
@@ -150,4 +200,31 @@ const UStaticMeshComponent* UWeaponAttachmentComponent::FindAttachmentSocketMesh
 {
 	const TObjectPtr<UStaticMeshComponent>* MeshComponent = AttachmentMeshes.Find(Slot);
 	return MeshComponent && *MeshComponent && (*MeshComponent)->DoesSocketExist(SocketName) ? MeshComponent->Get() : nullptr;
+}
+
+UStaticMeshComponent* UWeaponAttachmentComponent::FindRequiredPartSocketMesh(FName SocketName) const
+{
+	const UWeaponDefinition* WeaponDefinition = GetOwner<AHuntWeapon>()->Definition;
+	for (const TPair<EHuntAttachmentSlot, TObjectPtr<UStaticMeshComponent>>& Pair : AttachmentMeshes)
+	{
+		const FHuntWeaponSlot* PartSlot = WeaponDefinition->FindSlot(Pair.Key);
+		if (PartSlot && PartSlot->bRequired && Pair.Value->DoesSocketExist(SocketName))
+		{
+			return Pair.Value;
+		}
+	}
+	return nullptr;
+}
+
+const USceneComponent* UWeaponAttachmentComponent::FindSocketComponent(EHuntAttachmentSlot Slot, FName SocketName) const
+{
+	if (const UStaticMeshComponent* SlotMesh = FindAttachmentSocketMesh(Slot, SocketName))
+	{
+		return SlotMesh;
+	}
+	if (const UStaticMeshComponent* PartMesh = FindRequiredPartSocketMesh(SocketName))
+	{
+		return PartMesh;
+	}
+	return GetOwner<AHuntWeapon>()->GetMesh();
 }

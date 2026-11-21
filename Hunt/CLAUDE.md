@@ -85,8 +85,9 @@ theHunter: Call of the Wild 스타일 사냥 게임에 **총기 부착물(스코
 
 | 요소 | 역할 | 구현 방식 |
 |---|---|---|
-| `WeaponDefinition` | 총 본체의 기본 스탯, 사용 가능한 슬롯 목록 | `UPrimaryDataAsset` |
-| `AttachmentDefinition` | 슬롯 종류, 메시, 스탯 보정치, 호환 총기 | `UPrimaryDataAsset` |
+| `WeaponDefinition` | 총 본체(바디)의 기본 스탯, 바디가 주는 태그(`GrantedTags`), 슬롯(켜기·필수·숨길 뼈), 출고 부착물(`DefaultAttachments`, 장착할 부착물을 정하는 유일한 곳) | `UPrimaryDataAsset` |
+| `AttachmentDefinition` | 슬롯 종류, 메시, 스탯 배율, 태그(`GrantedTags`·`RequiredTags`·`BlockedTags`) | `UPrimaryDataAsset` |
+| 장착 가능 판단 | 총의 태그(바디 + 장착된 부착물 + 종류 태그 `Attachment.<슬롯>`)에 `RequiredTags`가 모두 있고 `BlockedTags`가 없으면 장착. 레일 장비는 레일 태그만 요구(공용), 몸체 결합 부품만 `Weapon.*` 요구. 필수 부품 → 하위 부착물 순서, 필수 부품이 바뀌면 하위만 재검사. 태그 정의는 `Config/DefaultGameplayTags.ini` | `GameplayTags` |
 | `WeaponAttachmentComponent` | 장착 상태 관리, 소켓에 메시 부착, 최종 스탯 계산 | C++ `UActorComponent` |
 | 최종 스탯 | 기본값 + 부착물 보정치 합산 | 한 함수로 계산 (`ComputeFinalStats`) |
 

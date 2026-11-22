@@ -9,6 +9,7 @@
 #include "WeaponDefinition.generated.h"
 
 class AHuntProjectile;
+class UAnimSequence;
 class USkeletalMesh;
 class USoundBase;
 class UTexture2D;
@@ -180,4 +181,15 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Crosshair")
 	TObjectPtr<UTexture2D> CrosshairBottom;
+
+	// 3인칭 오른손가락 포즈. 상태 애니메이션 위에 손가락 뼈만 덮는다. 비어 있으면 상태 애니메이션 손가락 그대로
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
+	TObjectPtr<UAnimSequence> ThirdPersonRightHandPose;
+
+	// 3인칭 대기 자세 포즈와 앞 달리기 팔. 비어 있으면 ABP 기본 대기 포즈. 손잡이 DA에 대기 포즈가 있으면 그것이 먼저다
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
+	TObjectPtr<UAnimSequence> ThirdPersonRelaxedPose;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
+	TObjectPtr<UAnimSequence> ThirdPersonRelaxedRunArms;
 };

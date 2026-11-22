@@ -209,11 +209,18 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float LeftHandGripAlpha = 0.f;
 
+	// 총 DA의 3인칭 오른손가락 포즈. ABP가 오른손가락 뼈만 이 포즈로 덮는다. 가중치는 포즈가 있으면 1
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UAnimSequence> RightHandGripPose;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float RightHandGripAlpha = 0.f;
+
 	// 손잡이를 쥔 손 모양(손잡이 DA의 HandPose). ABP가 손가락 뼈만 이 포즈로 덮는다
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UAnimSequence> LeftHandGripPose;
 
-	// 기본 대기 자세 포즈·앞 달리기 팔(ABP 기본값에서 지정). 손잡이 DA에 3인칭 대기 포즈가 있으면 그것으로 바꾼다
+	// 기본 대기 자세 포즈·앞 달리기 팔(ABP 기본값에서 지정). 손잡이 DA나 총 DA에 3인칭 대기 포즈가 있으면 그것으로 바꾼다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UAnimSequence> DefaultRelaxedPose;
 
@@ -299,8 +306,9 @@ private:
 	// 조준·벽 앞·대기 자세 가중치
 	void UpdateStanceAlphas();
 	void UpdateLeftHandIK();
-	// 손잡이 DA에 3인칭 대기 포즈가 있으면 그것, 없으면 기본 대기 포즈
+	// 3인칭 대기 포즈: 손잡이 DA → 총 DA → 기본 대기 포즈 순서로 처음 있는 것
 	void UpdateRelaxedPoses();
+	void UpdateRightHandPose();
 	// SprintAlpha의 감속 전 진행도(0~1, 일정 속도로 변함)
 	float SprintBlend = 0.f;
 	void UpdateAimPitch();

@@ -2,6 +2,13 @@
 
 #include "AnimGraphNode_BlendListByInt.h"
 #include "AnimGraphNode_LayeredBoneBlend.h"
+#include "AnimGraphNode_LinkedAnimLayer.h"
+#include "AnimGraphNode_LinkedInputPose.h"
+#include "AnimationGraph.h"
+#include "AnimationGraphSchema.h"
+#include "Animation/AnimBlueprint.h"
+#include "BlueprintActionDatabase.h"
+#include "BlueprintNodeSpawner.h"
 #include "AnimStateConduitNode.h"
 #include "AnimStateEntryNode.h"
 #include "AnimStateNode.h"
@@ -323,6 +330,81 @@ TArray<FString> UHuntAnimGraphToolset::CompileWithMessages(UBlueprint* Blueprint
 		}
 	}
 	return Messages;
+}
+
+UEdGraph* UHuntAnimGraphToolset::AddLayerFunction(UBlueprint* LayerInterface, const FString& Name, const TArray<FString>& InputPoses)
+{
+	if (!LayerInterface || !LayerInterface->IsA<UAnimBlueprint>() || LayerInterface->BlueprintType != BPTYPE_Interface || Name.IsEmpty()
+		|| FBlueprintEditorUtils::FindUniqueKismetName(LayerInterface, Name) != FName(*Name))
+	{
+		return nullptr;
+	}
+	// 에디터 "+ 애니메이션 레이어" 버튼과 같은 경로 (FBlueprintEditor::NewDocument_OnClicked, CGT_NewAnimationLayer)
+	LayerInterface->Modify();
+	UEdGraph* Graph = FBlueprintEditorUtils::CreateNewGraph(LayerInterface, FName(*Name), UAnimationGraph::StaticClass(), UAnimationGraphSchema::StaticClass());
+	FBlueprintEditorUtils::AddDomainSpecificGraph(LayerInterface, Graph);
+	int32 Y = 0;
+	for (const FString& Pose : InputPoses)
+	{
+		FGraphNodeCreator<UAnimGraphNode_LinkedInputPose> Creator(*Graph);
+		UAnimGraphNode_LinkedInputPose* Input = Creator.CreateNode();
+		Input->NodePosX = -400;
+		Input->NodePosY = Y;
+		Y += 200;
+		Creator.Finalize();
+		// Finalize가 고유 기본 이름(InPose)을 붙이므로 그 뒤에 이름을 정한다
+		Input->Node.Name = FName(*Pose);
+	}
+	MarkStructural(Graph);
+	return Graph;
+}
+
+TArray<UEdGraph*> UHuntAnimGraphToolset::ImplementLayerInterface(UBlueprint* AnimBlueprint, UBlueprint* LayerInterface)
+{
+	TArray<UEdGraph*> Graphs;
+	if (!AnimBlueprint || !AnimBlueprint->IsA<UAnimBlueprint>() || !LayerInterface || !LayerInterface->GeneratedClass)
+	{
+		return Graphs;
+	}
+	const FTopLevelAssetPath InterfacePath = LayerInterface->GeneratedClass->GetClassPathName();
+	const bool bImplemented = AnimBlueprint->ImplementedInterfaces.ContainsByPredicate([&](const FBPInterfaceDescription& Desc)
+	{
+		return Desc.Interface == LayerInterface->GeneratedClass;
+	});
+	if (!bImplemented && !FBlueprintEditorUtils::ImplementNewInterface(AnimBlueprint, InterfacePath))
+	{
+		return Graphs;
+	}
+	FBlueprintEditorUtils::GetInterfaceGraphs(AnimBlueprint, InterfacePath, Graphs);
+	return Graphs;
+}
+
+UEdGraphNode* UHuntAnimGraphToolset::AddLinkedLayerNode(UEdGraph* Graph, UBlueprint* LayerInterface, const FString& Layer, int32 X, int32 Y)
+{
+	if (!Graph || !LayerInterface)
+	{
+		return nullptr;
+	}
+	// 오른쪽 클릭 메뉴의 "<레이어> - Linked Anim Layer" 항목(인터페이스 에셋에 등록된 노드 스포너)을 그대로 실행한다
+	FBlueprintActionDatabase& Database = FBlueprintActionDatabase::Get();
+	Database.RefreshAssetActions(LayerInterface);
+	const FBlueprintActionDatabase::FActionList* Actions = Database.GetAllActions().Find(FObjectKey(LayerInterface));
+	if (!Actions)
+	{
+		return nullptr;
+	}
+	for (const UBlueprintNodeSpawner* Spawner : *Actions)
+	{
+		const UAnimGraphNode_LinkedAnimLayer* Template = Spawner ? Cast<UAnimGraphNode_LinkedAnimLayer>(Spawner->GetTemplateNode()) : nullptr;
+		if (Template && Template->Node.Layer == FName(*Layer))
+		{
+			Graph->Modify();
+			UEdGraphNode* Node = Spawner->Invoke(Graph, IBlueprintNodeBinder::FBindingSet(), FVector2D(X, Y));
+			MarkStructural(Graph);
+			return Node;
+		}
+	}
+	return nullptr;
 }
 
 class FHuntAnimToolsModule : public IModuleInterface

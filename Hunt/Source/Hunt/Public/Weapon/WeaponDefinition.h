@@ -9,7 +9,7 @@
 #include "WeaponDefinition.generated.h"
 
 class AHuntProjectile;
-class UAnimSequence;
+class UAnimInstance;
 class USkeletalMesh;
 class USoundBase;
 class UTexture2D;
@@ -182,14 +182,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Crosshair")
 	TObjectPtr<UTexture2D> CrosshairBottom;
 
-	// 3인칭 오른손가락 포즈. 상태 애니메이션 위에 손가락 뼈만 덮는다. 비어 있으면 상태 애니메이션 손가락 그대로
+	// 총 계열 애님 레이어(Lyra 아이템 애님 레이어 방식). 장착할 때 전신(3인칭)·1인칭 팔 메시에 연결한다. 비어 있으면 메인 ABP 그대로
+	// 같은 계열 총(권총 손잡이 = M4, 일반 개머리판 = BoltRifle)은 같은 레이어 ABP를 쓴다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
-	TObjectPtr<UAnimSequence> ThirdPersonRightHandPose;
-
-	// 3인칭 대기 자세 포즈와 앞 달리기 팔. 비어 있으면 ABP 기본 대기 포즈. 손잡이 DA에 대기 포즈가 있으면 그것이 먼저다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
-	TObjectPtr<UAnimSequence> ThirdPersonRelaxedPose;
+	TSubclassOf<UAnimInstance> ThirdPersonAnimLayers;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
-	TObjectPtr<UAnimSequence> ThirdPersonRelaxedRunArms;
+	TSubclassOf<UAnimInstance> FirstPersonAnimLayers;
 };

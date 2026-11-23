@@ -6,7 +6,6 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
 #include "Weapon/Attachment/GripAttachmentDefinition.h"
-#include "Weapon/WeaponDefinition.h"
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Curves/CurveVector.h"
@@ -98,7 +97,6 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	UpdateSprintBlend(DeltaSeconds);
 	UpdateStanceAlphas();
 	UpdateRelaxedPoses();
-	UpdateRightHandPose();
 	UpdateLeftHandIK();
 	UpdateAimPitch();
 	UpdateTurnInPlace(DeltaSeconds);
@@ -466,30 +464,16 @@ void UHuntAnimInstance::UpdateRelaxedPoses()
 {
 	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
 	const UGripAttachmentDefinition* Grip = Weapon ? Weapon->GetGrip() : nullptr;
-	const UWeaponDefinition* Definition = Weapon ? Weapon->Definition.Get() : nullptr;
 	if (Grip && Grip->ThirdPersonRelaxedPose)
 	{
 		RelaxedPose = Grip->ThirdPersonRelaxedPose;
 		RelaxedRunArms = Grip->ThirdPersonRelaxedRunArms ? Grip->ThirdPersonRelaxedRunArms : DefaultRelaxedRunArms;
-	}
-	else if (Definition && Definition->ThirdPersonRelaxedPose)
-	{
-		RelaxedPose = Definition->ThirdPersonRelaxedPose;
-		RelaxedRunArms = Definition->ThirdPersonRelaxedRunArms ? Definition->ThirdPersonRelaxedRunArms : DefaultRelaxedRunArms;
 	}
 	else
 	{
 		RelaxedPose = DefaultRelaxedPose;
 		RelaxedRunArms = DefaultRelaxedRunArms;
 	}
-}
-
-void UHuntAnimInstance::UpdateRightHandPose()
-{
-	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
-	const bool bHasWeapon = Weapon && Weapon->Definition && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent();
-	RightHandGripPose = bHasWeapon ? Weapon->Definition->ThirdPersonRightHandPose : nullptr;
-	RightHandGripAlpha = RightHandGripPose ? 1.f : 0.f;
 }
 
 void UHuntAnimInstance::UpdateLeftHandIK()

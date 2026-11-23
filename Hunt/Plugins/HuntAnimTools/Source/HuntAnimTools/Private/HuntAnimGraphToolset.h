@@ -127,4 +127,37 @@ public:
 	 */
 	UFUNCTION(meta = (AICallable), Category = "HuntAnimGraph")
 	static TArray<FString> CompileWithMessages(UBlueprint* Blueprint);
+
+	/**
+	 * Adds a layer to an Animation Layer Interface, as the "+ Animation Layer" button does. Compile the interface afterwards.
+	 * @param LayerInterface The Animation Layer Interface.
+	 * @param Name The layer name. Fails if the name is taken.
+	 * @param InputPoses Names of the layer's input poses, in pin order. Empty for a layer that makes its pose on its own.
+	 * @return The new layer graph.
+	 */
+	UFUNCTION(meta = (AICallable), Category = "HuntAnimGraph")
+	static UEdGraph* AddLayerFunction(UBlueprint* LayerInterface, const FString& Name, const TArray<FString>& InputPoses);
+
+	/**
+	 * Makes an Animation Blueprint implement an Animation Layer Interface, as Class Settings > Implemented Interfaces does.
+	 * One layer graph is created per layer, with the interface's input poses. Compile the interface first.
+	 * @param AnimBlueprint The Animation Blueprint.
+	 * @param LayerInterface The compiled Animation Layer Interface.
+	 * @return The interface's layer graphs in this Blueprint (also when it already implemented the interface).
+	 */
+	UFUNCTION(meta = (AICallable), Category = "HuntAnimGraph")
+	static TArray<UEdGraph*> ImplementLayerInterface(UBlueprint* AnimBlueprint, UBlueprint* LayerInterface);
+
+	/**
+	 * Places a Linked Anim Layer node, as picking "<Layer> - Linked Anim Layer" from the right-click menu does.
+	 * The Blueprint must implement the interface. The node's pose inputs match the layer's input poses; link them with BlueprintTools.
+	 * @param Graph The anim graph to place the node in.
+	 * @param LayerInterface The Animation Layer Interface that declares the layer.
+	 * @param Layer The layer name.
+	 * @param X Graph X position.
+	 * @param Y Graph Y position.
+	 * @return The new node, or null when the layer is not found.
+	 */
+	UFUNCTION(meta = (AICallable), Category = "HuntAnimGraph")
+	static UEdGraphNode* AddLinkedLayerNode(UEdGraph* Graph, UBlueprint* LayerInterface, const FString& Layer, int32 X = 0, int32 Y = 0);
 };

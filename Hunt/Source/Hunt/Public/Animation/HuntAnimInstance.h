@@ -51,6 +51,9 @@ class HUNT_API UHuntAnimInstance : public UAnimInstance
 {
 	GENERATED_BODY()
 
+	// 총 애님 레이어가 메인 값을 같은 이름으로 복사해 읽는다
+	friend class UHuntWeaponLayersAnimInstance;
+
 public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
@@ -209,7 +212,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float LeftHandGripAlpha = 0.f;
 
-	// 총 DA의 3인칭 오른손가락 포즈. ABP가 오른손가락 뼈만 이 포즈로 덮는다. 가중치는 포즈가 있으면 1
+	// shortcut: 지금 메인 ABP 손가락 노드가 읽어서 남겨 둠(항상 비어 있음), 손 포즈 노드를 HandPoses 레이어로 옮기면 지운다
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UAnimSequence> RightHandGripPose;
 
@@ -220,7 +223,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UAnimSequence> LeftHandGripPose;
 
-	// 기본 대기 자세 포즈·앞 달리기 팔(ABP 기본값에서 지정). 손잡이 DA나 총 DA에 3인칭 대기 포즈가 있으면 그것으로 바꾼다
+	// 기본 대기 자세 포즈·앞 달리기 팔(ABP 기본값에서 지정). 손잡이 DA에 3인칭 대기 포즈가 있으면 그것으로 바꾼다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UAnimSequence> DefaultRelaxedPose;
 
@@ -306,9 +309,8 @@ private:
 	// 조준·벽 앞·대기 자세 가중치
 	void UpdateStanceAlphas();
 	void UpdateLeftHandIK();
-	// 3인칭 대기 포즈: 손잡이 DA → 총 DA → 기본 대기 포즈 순서로 처음 있는 것
+	// 3인칭 대기 포즈: 손잡이 DA → 기본 대기 포즈 순서로 처음 있는 것
 	void UpdateRelaxedPoses();
-	void UpdateRightHandPose();
 	// SprintAlpha의 감속 전 진행도(0~1, 일정 속도로 변함)
 	float SprintBlend = 0.f;
 	void UpdateAimPitch();

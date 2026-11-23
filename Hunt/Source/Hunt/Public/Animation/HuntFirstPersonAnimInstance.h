@@ -18,6 +18,9 @@ class HUNT_API UHuntFirstPersonAnimInstance : public UAnimInstance
 {
 	GENERATED_BODY()
 
+	// 1인칭 총 애님 레이어가 메인 값을 같은 이름으로 복사해 읽는다
+	friend class UHuntFirstPersonWeaponLayersAnimInstance;
+
 public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;

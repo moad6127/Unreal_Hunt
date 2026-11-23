@@ -183,6 +183,20 @@ void AHuntCharacter::EquipDefaultWeapon()
 	BodyWeapon->GetAttachments()->EquipDefaultAttachments();
 
 	UpdateWeaponVisibility();
+	LinkWeaponAnimLayers();
+}
+
+void AHuntCharacter::LinkWeaponAnimLayers()
+{
+	// shortcut: 장착은 시작할 때 한 번뿐이라 이전 레이어를 끊지 않는다, 총 교체가 생기면 UnlinkAnimClassLayers를 먼저 부른다
+	if (DefaultWeapon->ThirdPersonAnimLayers)
+	{
+		GetMesh()->LinkAnimClassLayers(DefaultWeapon->ThirdPersonAnimLayers);
+	}
+	if (DefaultWeapon->FirstPersonAnimLayers)
+	{
+		FirstPersonArms->LinkAnimClassLayers(DefaultWeapon->FirstPersonAnimLayers);
+	}
 }
 
 AHuntWeapon* AHuntCharacter::SpawnWeapon()

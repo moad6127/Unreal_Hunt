@@ -45,7 +45,7 @@ The project enables the `ModelContextProtocol`, `AllToolsets` and `Terminal` plu
 
 **애니메이션 블루프린트(ABP) 작업에는 프로젝트 플러그인 `Plugins/HuntAnimTools`를 쓴다.** MCP 툴셋 이름은 `HuntAnimTools.HuntAnimGraphToolset`이다.
 
-- 도구: `ListGraphs`, `DescribeGraph`, `AddState`, `AddConduit`, `AddTransition`, `SetEntryState`, `RenameNode`, `RemoveNodes`, `CopyNodes`, `MoveNodes`, `AddBlendPin`, `CompileWithMessages`.
+- 도구: `ListGraphs`, `DescribeGraph`, `AddState`, `AddConduit`, `AddTransition`, `SetEntryState`, `RenameNode`, `RemoveNodes`, `CopyNodes`, `MoveNodes`, `AddBlendPin`, `CompileWithMessages`, `AddLayerFunction`(레이어 인터페이스에 레이어·입력 포즈), `ImplementLayerInterface`(ABP가 인터페이스 구현), `AddLinkedLayerNode`(레이어 노드 배치).
 - 스테이트·전환 추가, 애님 노드 삭제, 그래프 간 복사·이동은 이 도구로 직접 한다. T3D 붙여넣기나 사용자 손작업을 요청하지 않는다. 다른 프로젝트에서 잘라 온 T3D는 붙여넣지 않는다(에디터 충돌).
 - 일반 노드 생성·핀 연결·전환 규칙 그래프는 `BlueprintTools`, 노드·전환 속성은 `ObjectTools`로 한다.
 - 도구가 부족해도 바로 추가하지 않는다. 어떤 작업을 할 수 있게 되는 도구인지 사용자에게 먼저 설명하고, 허락을 받은 뒤에 추가한다.

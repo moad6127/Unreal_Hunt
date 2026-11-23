@@ -150,6 +150,8 @@ private:
 	AHuntWeapon* SpawnWeapon();
 	void AttachFirstPersonWeapon();
 	void AttachBodyWeapon();
+	// 총 DA의 계열 애님 레이어를 전신·1인칭 팔 애님에 연결한다
+	void LinkWeaponAnimLayers();
 
 	const UWeaponDefinition* GetWeaponDefinition() const;
 

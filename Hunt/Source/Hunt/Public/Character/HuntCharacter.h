@@ -73,9 +73,18 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh")
 	TObjectPtr<USkeletalMeshComponent> FirstPersonLegs;
 
-	// 조준 시 시야각(가늠쇠 기준. 스코프 배율은 M2 4단계에서)
+	// 조준 시 시야각(가늠쇠 기준). 배율 있는 조준경을 달면 조준경 배율로 정한다(GetAimFOV)
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim", meta = (ClampMin = "5.0", ClampMax = "170.0"))
 	float AimFOV = 70.f;
+
+	// 조준경 렌즈 마스크 MPC. 벡터 ScopeLens = (접안렌즈 중심 X 오른쪽, Y 위, 반지름, 조준 정도). 위치·반지름은 화면 중앙 원점, 화면 세로 절반 = 1
+	// 조준경 머티리얼이 이 원 안을 잘라내고, 카메라 포스트프로세스가 레티클을 그린다
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim")
+	TObjectPtr<class UMaterialParameterCollection> ScopeLensParameters;
+
+	// 레티클 포스트프로세스 머티리얼(텍스처 파라미터 ReticleTexture). 시작할 때 카메라에 인스턴스로 붙이고 조준경의 Reticle을 넣는다
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim")
+	TObjectPtr<class UMaterialInterface> ScopeReticleMaterial;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> MoveAction;
@@ -170,6 +179,12 @@ private:
 	void UpdateCameraWall();
 	void UpdateAimAlpha(float DeltaSeconds);
 	void UpdateCameraView(float AimBlend);
+	// 장착된 조준경 (없거나 배율 없는 부착물이면 nullptr)
+	const class UOpticAttachmentDefinition* GetEquippedOptic() const;
+	// 조준이 끝났을 때의 시야각. 조준경이 있으면 그 배율, 없으면 AimFOV
+	float GetAimFOV() const;
+	// 조준이 끝났을 때 총을 그리는 시야각. 조준경이 있으면 그 조준경 값, 없으면 AimFOV(세상과 같음)
+	float GetAimFirstPersonFOV() const;
 
 	// 반동 (조준선). 이번 프레임에 적용할 몫을 꺼내고 남은 양을 줄인다
 	void ApplyRecoil(float DeltaSeconds);
@@ -187,6 +202,8 @@ private:
 	void UpdateAirSpread(float DeltaSeconds);
 	void UpdateWeaponKick(float DeltaSeconds);
 	void UpdateFirstPersonArms(float AimBlend);
+	// 접안렌즈를 1인칭 FOV로 화면에 투영해 ScopeLensParameters에 넣는다. 팔·총 위치가 정해진 뒤에 호출
+	void UpdateScopeLensMask(float AimBlend);
 	FTransform GetSightAlignedArmsTransform(float AimBlend) const;
 	FVector ArmsWorldToCamera(const FTransform& ArmsToCamera, const FVector& WorldLocation) const;
 
@@ -234,6 +251,12 @@ private:
 
 	// BP에 정한 팔의 카메라 기준 위치. 조준 정렬은 여기서부터 옮긴다
 	FTransform ArmsBaseTransform = FTransform::Identity;
+
+	// 카메라 포스트프로세스에 붙인 레티클 머티리얼 인스턴스와 지금 넣어 둔 레티클
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> ScopeReticleInstance;
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> CurrentReticle;
 
 	// 총 킥(카메라 기준). 목표는 매 발 더해지고 0으로 돌아가며, 현재 값이 목표를 빠르게 따라간다
 	FVector KickTargetLocation = FVector::ZeroVector;

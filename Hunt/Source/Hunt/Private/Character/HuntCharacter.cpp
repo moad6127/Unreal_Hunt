@@ -10,6 +10,9 @@
 #include "Components/StaticMeshComponent.h"
 #include "Weapon/HuntWeapon.h"
 #include "Weapon/Attachment/WeaponAttachmentComponent.h"
+#include "Weapon/Attachment/OpticAttachmentDefinition.h"
+#include "Kismet/KismetMaterialLibrary.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Weapon/WeaponDefinition.h"
 
 namespace
@@ -18,6 +21,10 @@ namespace
 	const FName CameraHeadBone(TEXT("head"));
 	// 조준 시 화면 중앙에 올 총의 가늠자 소켓. 조준하는 동안 팔 전체를 옮겨 이 소켓을 시선 축 위에 둔다
 	const FName SightSocketName(TEXT("Socket_Sight"));
+	// ScopeLensParameters MPC의 벡터 파라미터 이름
+	const FName ScopeLensParameterName(TEXT("ScopeLens"));
+	// ScopeReticleMaterial의 레티클 텍스처 파라미터 이름
+	const FName ScopeReticleTextureName(TEXT("ReticleTexture"));
 	// 다른 사람이 보는 전신 손 소켓
 	const FName WeaponSocketName(TEXT("HandGrip_R"));
 	// 1인칭 팔에서 총을 붙일 뼈. LPSP 애니메이션은 총을 ik_hand_gun(SOCKET_Weapon)으로 움직이고 손은 그 총을 잡는다
@@ -109,6 +116,8 @@ void AHuntCharacter::CreateFirstPersonCamera()
 	FirstPersonCamera->SetupAttachment(GetCapsuleComponent());
 	FirstPersonCamera->SetRelativeLocation(FVector(0.f, 0.f, BaseEyeHeight));
 	FirstPersonCamera->bUsePawnControlRotation = true;
+	// 총(1인칭 프리미티브)을 세상과 다른 FOV로 그린다: 조준경 배율로 세상만 좁히고 총은 확대하지 않는다
+	FirstPersonCamera->bEnableFirstPersonFieldOfView = true;
 }
 
 void AHuntCharacter::CreateFirstPersonArms()
@@ -163,6 +172,11 @@ void AHuntCharacter::BeginPlay()
 	AddTickPrerequisiteComponent(FirstPersonArms);
 	DefaultFOV = FirstPersonCamera->FieldOfView;
 	DefaultFirstPersonScale = FirstPersonCamera->FirstPersonScale;
+	if (ScopeReticleMaterial)
+	{
+		ScopeReticleInstance = UMaterialInstanceDynamic::Create(ScopeReticleMaterial, this);
+		FirstPersonCamera->PostProcessSettings.AddBlendable(ScopeReticleInstance, 1.f);
+	}
 
 	if (DefaultWeapon)
 	{
@@ -355,6 +369,7 @@ void AHuntCharacter::Tick(float DeltaSeconds)
 	UpdateWeaponSway(DeltaSeconds);
 	UpdateWeaponKick(DeltaSeconds);
 	UpdateFirstPersonArms(AimBlend);
+	UpdateScopeLensMask(AimBlend);
 }
 
 void AHuntCharacter::UpdateMovementSpeed(float DeltaSeconds)
@@ -523,7 +538,8 @@ FRotator AHuntCharacter::ConsumeRecoilRecovery(float DeltaSeconds)
 void AHuntCharacter::UpdateCameraView(float AimBlend)
 {
 	FirstPersonCamera->SetRelativeLocation(HeadCameraLocation);
-	FirstPersonCamera->SetFieldOfView(FMath::Lerp(DefaultFOV, AimFOV, AimBlend));
+	FirstPersonCamera->SetFieldOfView(FMath::Lerp(DefaultFOV, GetAimFOV(), AimBlend));
+	FirstPersonCamera->SetFirstPersonFieldOfView(FMath::Lerp(DefaultFOV, GetAimFirstPersonFOV(), AimBlend));
 	// Scale은 카메라 중심으로 눌러 그려 화면 모양은 같고 깊이만 바뀐다. 0.4면 근평면이 총 기준 12.5cm라 조준경 접안렌즈가 잘려,
 	// 조준 중에는 1로 둔다(벽 앞에서는 WallBlock이 조준을 막아 벽 뚫림이 없다)
 	FirstPersonCamera->SetFirstPersonScale(FMath::Lerp(DefaultFirstPersonScale, 1.f, AimBlend));
@@ -570,6 +586,66 @@ void AHuntCharacter::UpdateFirstPersonArms(float AimBlend)
 	ArmsToCamera = ArmsToCamera * FTransform(-Pivot) * FTransform(Sway + KickRotation * KickScale) * FTransform(Pivot);
 	ArmsToCamera.AddToTranslation(KickLocation * KickScale);
 	FirstPersonArms->SetRelativeTransform(ArmsToCamera);
+}
+
+void AHuntCharacter::UpdateScopeLensMask(float AimBlend)
+{
+	if (!ScopeLensParameters)
+	{
+		return;
+	}
+
+	// 조준경이 없으면 조준 정도 0: 머티리얼이 아무것도 자르지 않는다
+	FLinearColor Lens(0.f, 0.f, 0.f, 0.f);
+	const UOpticAttachmentDefinition* Optic = GetEquippedOptic();
+	const UStaticMeshComponent* OpticMesh = Optic ? EquippedWeapon->GetAttachments()->FindAttachmentSocketMesh(EHuntAttachmentSlot::Optic, SightSocketName) : nullptr;
+	if (OpticMesh)
+	{
+		// 카메라 기준(X 앞, Y 오른쪽, Z 위). 총은 1인칭 FOV로 그려지므로 그 FOV(수평)로 투영한다. 1인칭 Scale은 카메라 쪽으로 누르기만 해서 화면 위치는 같다
+		const FVector Eyepiece = FirstPersonCamera->GetComponentTransform().InverseTransformPosition(OpticMesh->GetSocketLocation(SightSocketName));
+		if (Eyepiece.X > KINDA_SMALL_NUMBER)
+		{
+			// 화면 중앙 원점, 화면 세로 절반 = 1인 단위. 엔진 기본 MaintainYFOV: FOV는 카메라 AspectRatio에서의 가로 값이고 세로 시야가 고정이라
+			// 세로 기준이면 PIE 창 비율과 무관하다. 가로 비율은 머티리얼이 ViewSize로 맞춘다
+			const float TanHalfVerticalFOV = FMath::Tan(FMath::DegreesToRadians(FirstPersonCamera->FirstPersonFieldOfView * 0.5f)) / FirstPersonCamera->AspectRatio;
+			const float CmToHalfHeight = 1.f / (Eyepiece.X * TanHalfVerticalFOV);
+			Lens = FLinearColor(Eyepiece.Y * CmToHalfHeight, Eyepiece.Z * CmToHalfHeight, Optic->EyepieceRadius * CmToHalfHeight, AimBlend);
+		}
+	}
+	UKismetMaterialLibrary::SetVectorParameterValue(this, ScopeLensParameters, ScopeLensParameterName, Lens);
+
+	// 레티클은 조준경을 바꿀 때만 다시 넣는다
+	UTexture2D* Reticle = Optic ? Optic->Reticle.Get() : nullptr;
+	if (ScopeReticleInstance && Reticle && Reticle != CurrentReticle)
+	{
+		CurrentReticle = Reticle;
+		ScopeReticleInstance->SetTextureParameterValue(ScopeReticleTextureName, Reticle);
+	}
+}
+
+const UOpticAttachmentDefinition* AHuntCharacter::GetEquippedOptic() const
+{
+	return EquippedWeapon
+		? Cast<UOpticAttachmentDefinition>(EquippedWeapon->GetAttachments()->GetEquippedAttachment(EHuntAttachmentSlot::Optic))
+		: nullptr;
+}
+
+float AHuntCharacter::GetAimFOV() const
+{
+	const UOpticAttachmentDefinition* Optic = GetEquippedOptic();
+	if (!Optic)
+	{
+		return AimFOV;
+	}
+	// 배율 = 화면에서 같은 물체가 커 보이는 비율이라 FOV 자체가 아니라 tan(FOV/2)를 나눈다
+	const float HalfTan = FMath::Tan(FMath::DegreesToRadians(DefaultFOV * 0.5f)) / Optic->Magnification;
+	return FMath::RadiansToDegrees(2.f * FMath::Atan(HalfTan));
+}
+
+float AHuntCharacter::GetAimFirstPersonFOV() const
+{
+	const UOpticAttachmentDefinition* Optic = GetEquippedOptic();
+	return Optic ? Optic->AimFirstPersonFOV : AimFOV;
 }
 
 FTransform AHuntCharacter::GetSightAlignedArmsTransform(float AimBlend) const

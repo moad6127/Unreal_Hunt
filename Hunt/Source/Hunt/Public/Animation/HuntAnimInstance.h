@@ -203,8 +203,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float LookYawTime = 0.5f;
 
-	// 왼손 IK 목표 위치: 총의 왼손 소켓을 오른손(hand_r) 뼈 기준으로 나타낸 값. ABP의 Two Bone IK(Bone Space, hand_r)에 넣는다
-	// 총이 오른손에 붙어 있으므로 이 상대값은 프레임 지연 없이 정확하다
+	// 왼손 IK 목표 위치: 총의 왼손 소켓을 총이 붙은 ik_hand_gun 뼈 기준으로 나타낸 값. ABP의 Two Bone IK(Bone Space, ik_hand_gun)에 넣는다
+	// 총이 이 뼈에 붙어 있으므로 이 상대값은 프레임 지연 없이 정확하다
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	FVector LeftHandIKLocation = FVector::ZeroVector;
 
@@ -212,35 +212,31 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	float LeftHandGripAlpha = 0.f;
 
-	// shortcut: 지금 메인 ABP 손가락 노드가 읽어서 남겨 둠(항상 비어 있음), 손 포즈 노드를 HandPoses 레이어로 옮기면 지운다
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
-	TObjectPtr<UAnimSequence> RightHandGripPose;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
-	float RightHandGripAlpha = 0.f;
-
-	// 손잡이를 쥔 손 모양(손잡이 DA의 HandPose). ABP가 손가락 뼈만 이 포즈로 덮는다
+	// 손잡이를 쥔 손 모양(손잡이 DA의 HandPose). 총 레이어(HandPoses)가 복사해 손가락 뼈만 이 포즈로 덮는다
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UAnimSequence> LeftHandGripPose;
-
-	// 기본 대기 자세 포즈·앞 달리기 팔(ABP 기본값에서 지정). 손잡이 DA에 3인칭 대기 포즈가 있으면 그것으로 바꾼다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TObjectPtr<UAnimSequence> DefaultRelaxedPose;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TObjectPtr<UAnimSequence> DefaultRelaxedRunArms;
-
-	// 지금 쓸 대기 자세 포즈·앞 달리기 팔. ABP 대기 포즈 노드(Sequence 핀)가 읽는다
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
-	TObjectPtr<UAnimSequence> RelaxedPose;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
-	TObjectPtr<UAnimSequence> RelaxedRunArms;
 
 	// 손잡이를 쥔 왼손 방향(컴포넌트 공간) = 손잡이 Socket_LeftHand 회전
 	// shortcut: 지난 프레임의 총 회전이라 몸이 빨리 돌면 한 프레임 늦는다, 손이 흔들려 보이면 hand_r 기준으로 바꾼다
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	FRotator LeftHandIKRotation = FRotator::ZeroRotator;
+
+	// 오른손 IK(총·몸통에 Socket_RightHand가 있으면 1): 애니메이션 손 대신 그 소켓을 쥔다. 권총 손잡이처럼 소켓이 없는 총은 0
+	// 위치는 ik_hand_gun 기준(Two Bone IK, 지연 없음), 방향은 컴포넌트 공간(Modify Bone hand_r)
+	// shortcut: 방향은 지난 프레임 ik_hand_gun 기준이라 상체가 빨리 돌면 한 프레임 늦는다(왼손 방향과 같음), 손이 흔들려 보이면 뼈 기준으로 바꾼다
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float RightHandIKAlpha = 0.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	FVector RightHandIKLocation = FVector::ZeroVector;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	FRotator RightHandIKRotation = FRotator::ZeroRotator;
+
+	// 대기 오른손 가중치: 총에 대기 오른손 소켓(Socket_RightHand_Relaxed)이 있으면 대기 팔 가중치(대기·질주), 없으면 0
+	// 이만큼 오른손 IK와 총 레이어의 오른손가락 포즈를 빼고 대기 애니메이션 손을 쓰며, 총은 그 소켓 기준으로 손에 붙는다
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float RightHandRelaxedAlpha = 0.f;
 
 	// 발 고정(ALS Foot Lock): 멈추는 순간 디딘 발을 월드에 고정해 Idle로 섞이는 동안 미끄러지지 않게 한다
 	// ABP가 발 IK(Control Rig) 앞에서 ik_foot_l/r을 이 위치(컴포넌트 공간)로 옮긴다. Alpha가 0이면 애니메이션 그대로
@@ -309,8 +305,7 @@ private:
 	// 조준·벽 앞·대기 자세 가중치
 	void UpdateStanceAlphas();
 	void UpdateLeftHandIK();
-	// 3인칭 대기 포즈: 손잡이 DA → 기본 대기 포즈 순서로 처음 있는 것
-	void UpdateRelaxedPoses();
+	void UpdateRightHandIK();
 	// SprintAlpha의 감속 전 진행도(0~1, 일정 속도로 변함)
 	float SprintBlend = 0.f;
 	void UpdateAimPitch();

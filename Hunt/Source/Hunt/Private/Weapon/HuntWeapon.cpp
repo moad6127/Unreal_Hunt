@@ -31,6 +31,10 @@ namespace
 	const FName FirstPersonLeftHandSocketName(TEXT("Socket_LeftHand_FP"));
 	// 오른손이 권총 손잡이를 쥐는 지점. 모든 총에 같은 규칙(손잡이가 몸통과 만나는 바로 아래, 앞뒤 가운데)으로 둔다
 	const FName RightHandGripSocketName(TEXT("Socket_Grip"));
+	// 3인칭 오른손목(hand_r) 위치·방향. 권총 손잡이처럼 애니메이션 손이 그대로 맞는 총은 두지 않는다
+	const FName RightHandSocketName(TEXT("Socket_RightHand"));
+	// 대기 자세에서 오른손목(hand_r)이 총을 쥐는 자리. 대기 애니메이션 손이 총을 직접 쥐는 계열(일반 개머리판)만 둔다
+	const FName RightHandRelaxedSocketName(TEXT("Socket_RightHand_Relaxed"));
 }
 
 AHuntWeapon::AHuntWeapon()
@@ -103,6 +107,28 @@ FVector AHuntWeapon::GetRightHandGripOffset() const
 	return Mesh->DoesSocketExist(RightHandGripSocketName)
 		? Mesh->GetSocketTransform(RightHandGripSocketName, RTS_Component).GetLocation()
 		: FVector::ZeroVector;
+}
+
+bool AHuntWeapon::GetRightHandGripTransform(FTransform& OutTransform) const
+{
+	const USceneComponent* SocketComponent = Attachments->FindSocketComponent(EHuntAttachmentSlot::Stock, RightHandSocketName);
+	if (!SocketComponent->DoesSocketExist(RightHandSocketName))
+	{
+		return false;
+	}
+	OutTransform = SocketComponent->GetSocketTransform(RightHandSocketName);
+	return true;
+}
+
+bool AHuntWeapon::GetRightHandRelaxedTransform(FTransform& OutTransform) const
+{
+	const USceneComponent* SocketComponent = Attachments->FindSocketComponent(EHuntAttachmentSlot::Stock, RightHandRelaxedSocketName);
+	if (!SocketComponent->DoesSocketExist(RightHandRelaxedSocketName))
+	{
+		return false;
+	}
+	OutTransform = SocketComponent->GetSocketTransform(RightHandRelaxedSocketName).GetRelativeTransform(Mesh->GetComponentTransform());
+	return true;
 }
 
 void AHuntWeapon::StartFire()

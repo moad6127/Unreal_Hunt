@@ -8,6 +8,7 @@
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/SkeletalMeshSocket.h"
 #include "Weapon/HuntWeapon.h"
 #include "Weapon/Attachment/WeaponAttachmentComponent.h"
 #include "Weapon/Attachment/OpticAttachmentDefinition.h"
@@ -25,7 +26,9 @@ namespace
 	const FName ScopeLensParameterName(TEXT("ScopeLens"));
 	// ScopeReticleMaterial의 레티클 텍스처 파라미터 이름
 	const FName ScopeReticleTextureName(TEXT("ReticleTexture"));
-	// 다른 사람이 보는 전신 손 소켓
+	// 다른 사람이 보는 전신 총은 ik_hand_gun 뼈에 붙인다(ABP가 hand_r을 복사해 두고, 손잡이가 다른 총은 오른손을 IK로 총에 맞춘다)
+	// 손 소켓(HandGrip_R)의 손 기준 위치·회전을 그대로 옮겨 와 손 IK가 없는 총은 손에 붙일 때와 같다
+	const FName BodyWeaponBone(TEXT("ik_hand_gun"));
 	const FName WeaponSocketName(TEXT("HandGrip_R"));
 	// 1인칭 팔에서 총을 붙일 뼈. LPSP 애니메이션은 총을 ik_hand_gun(SOCKET_Weapon)으로 움직이고 손은 그 총을 잡는다
 	const FName FirstPersonWeaponBone(TEXT("ik_hand_gun"));
@@ -72,8 +75,10 @@ namespace
 	constexpr float CameraWallMargin = 5.f;
 	// 조준을 풀거나 쏜 뒤 준비 자세(총구 앞)를 유지하는 시간(초). 지나면 총을 내린다
 	constexpr float ReadyHoldTime = 2.f;
-	// 내린 총을 드는(또는 내리는) 시간(초). 내린 채 쏘면 이만큼 든 뒤 발사한다
+	// 내린 총을 드는 시간(초). 내린 채 쏘면 이만큼 든 뒤 발사한다
 	constexpr float RaiseTime = 0.2f;
+	// 총을 대기 자세로 내리는 시간(초). 드는 것보다 천천히 내려야 자연스럽다(11-24 PIE)
+	constexpr float LowerTime = 0.5f;
 	// 입력 방향이 정면에서 이 각도(도) 안일 때만 질주한다. 벗어나면 조깅/걷기 속도로 돌아간다
 	constexpr float SprintMaxAngle = 20.f;
 	// 최대 속도를 낮출 때(질주 → 조깅/걷기) 초당 줄이는 양(cm/s). 한 번에 낮추면 몸이 0.2초 만에 멈춰 이동 애니메이션 블렌드가 따라오지 못한다
@@ -234,9 +239,23 @@ void AHuntCharacter::AttachBodyWeapon()
 {
 	// 전신 메시 설정을 따른다: 기본은 내 화면에서 숨기고 그림자만 남김, 3인칭 테스트 BP(None)에서는 보임
 	BodyWeapon->GetMesh()->SetFirstPersonPrimitiveType(GetMesh()->FirstPersonPrimitiveType);
-	BodyWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocketName);
+	BodyWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, BodyWeaponBone);
+	SetBodyWeaponRelaxedGrip(0.f);
+}
+
+void AHuntCharacter::SetBodyWeaponRelaxedGrip(float RelaxedHandAlpha)
+{
 	// HandGrip_R 소켓이 오른손 기준점이다
-	BodyWeapon->GetRootComponent()->SetRelativeLocation(-BodyWeapon->GetRightHandGripOffset());
+	const USkeletalMeshSocket* HandSocket = GetMesh()->GetSocketByName(WeaponSocketName);
+	const FTransform HandSocketTransform = HandSocket ? HandSocket->GetSocketLocalTransform() : FTransform::Identity;
+	FTransform Grip = FTransform(-BodyWeapon->GetRightHandGripOffset()) * HandSocketTransform;
+	FTransform RelaxedHand;
+	if (RelaxedHandAlpha > 0.f && BodyWeapon->GetRightHandRelaxedTransform(RelaxedHand))
+	{
+		// 대기 손 소켓 = 총 공간의 손이므로 그 역이 손 공간의 총이다
+		Grip.BlendWith(RelaxedHand.Inverse(), RelaxedHandAlpha);
+	}
+	BodyWeapon->GetRootComponent()->SetRelativeTransform(Grip);
 }
 
 void AHuntCharacter::NotifyControllerChanged()
@@ -321,7 +340,8 @@ void AHuntCharacter::UpdateStance(float DeltaSeconds)
 			bFireAfterRaise = false;
 		}
 	}
-	RelaxedAlpha = FMath::FInterpConstantTo(RelaxedAlpha, Stance == EHuntWeaponStance::Relaxed ? 1.f : 0.f, DeltaSeconds, 1.f / RaiseTime);
+	const bool bLowering = Stance == EHuntWeaponStance::Relaxed;
+	RelaxedAlpha = FMath::FInterpConstantTo(RelaxedAlpha, bLowering ? 1.f : 0.f, DeltaSeconds, 1.f / (bLowering ? LowerTime : RaiseTime));
 }
 
 void AHuntCharacter::UpdateAirSpread(float DeltaSeconds)

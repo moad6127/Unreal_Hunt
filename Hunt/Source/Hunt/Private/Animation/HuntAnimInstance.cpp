@@ -6,9 +6,14 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
 #include "Weapon/Attachment/GripAttachmentDefinition.h"
+#include "Weapon/WeaponDefinition.h"
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Curves/CurveVector.h"
+#include "HAL/IConsoleManager.h"
+
+// shortcut: 아래 조준 팔 꺾임 측정용 임시 로그(11-24), 원인 확인 뒤 지운다
+static TAutoConsoleVariable<int32> CVarAimArmDebug(TEXT("hunt.AimArmDebug"), 0, TEXT("1 = 3인칭 조준 팔(왼손 IK 목표·총 방향)을 매 프레임 AIMARM 로그로"));
 
 namespace
 {
@@ -60,6 +65,8 @@ namespace
 	// 질주 상체 블렌드: 속도가 이 구간의 중간을 넘으면 SprintBlendTime 동안 질주 상체로 바뀐다
 	const FVector2D SprintBlendSpeed = FVector2D(400.f, 550.f);
 	constexpr float SprintBlendTime = 0.4f;
+	// 조준을 누르면 속도와 상관없이 질주 상체를 이 시간에 뺀다. 총 조준 시간(기본 0.25초)보다 짧아야 조준 자세가 질주 팔(총이 가슴을 가로지름) 위에 섞이지 않는다
+	constexpr float SprintToAimBlendTime = 0.15f;
 	// 서 있는 하체가 두 자세 사이를 바꾸는 시간(초) = 전환 애니메이션 재생 시간
 	constexpr float LegStanceBlendTime = 0.4f;
 	// 움직이기 시작할 때 고정을 푸는 시간(초)
@@ -96,13 +103,35 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	UpdateMovingBackward(DeltaSeconds);
 	UpdateSprintBlend(DeltaSeconds);
 	UpdateStanceAlphas();
-	UpdateRelaxedPoses();
 	UpdateLeftHandIK();
+	UpdateRightHandIK();
 	UpdateAimPitch();
 	UpdateTurnInPlace(DeltaSeconds);
 	UpdateLegStance(DeltaSeconds);
 	UpdatePlantTimes();
 	UpdateFootLock(DeltaSeconds);
+
+	// shortcut: 임시 측정 로그(위 CVarAimArmDebug). 뼈 위치는 지난 프레임 최종 포즈(IK 뒤)
+	const AHuntWeapon* DebugWeapon = Character->GetBodyWeapon();
+	if (CVarAimArmDebug.GetValueOnGameThread() > 0 && Character->IsLocallyControlled() && DebugWeapon && LeftHandIKAlpha > 0.f)
+	{
+		const USkeletalMeshComponent* Body = GetSkelMeshComponent();
+		const FVector Shoulder = Body->GetSocketLocation(TEXT("upperarm_l"));
+		const FVector Elbow = Body->GetSocketLocation(TEXT("lowerarm_l"));
+		const FVector Hand = Body->GetSocketLocation(TEXT("hand_l"));
+		const FVector Target = DebugWeapon->GetLeftHandGripLocation(AimAlpha, FMath::Lerp(RelaxedAlpha, 1.f, SprintAlpha));
+		const float ArmLength = FVector::Dist(Shoulder, Elbow) + FVector::Dist(Elbow, Hand);
+		const float ElbowAngle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct((Shoulder - Elbow).GetSafeNormal(), (Hand - Elbow).GetSafeNormal())));
+		const USkeletalMeshComponent* GunMesh = DebugWeapon->GetMesh();
+		const FVector GunDirection = (GunMesh->GetSocketLocation(TEXT("b_gun_muzzleflash")) - GunMesh->GetSocketLocation(TEXT("Socket_Grip"))).GetSafeNormal();
+		const FRotator Control = Character->GetControlRotation();
+		const FVector TargetLocal = Character->GetActorTransform().InverseTransformPosition(Target);
+		UE_LOG(LogTemp, Log, TEXT("AIMARM t=%.3f gun=%s grip=%s pitchRaw=%.1f pitch=%.1f aim=%.2f sprint=%.2f ao=%.2f relaxed=%.2f gunPitch=%.1f gunYawErr=%.1f tgt=(%.1f,%.1f,%.1f) reach=%.2f elbow=%.0f handErr=%.1f"),
+			GetWorld()->GetTimeSeconds(), *GetNameSafe(DebugWeapon->Definition.Get()), *GetNameSafe(DebugWeapon->GetGrip()),
+			FRotator::NormalizeAxis(Control.Pitch), AimPitch, AimAlpha, SprintAlpha, AimOffsetAlpha, RelaxedAlpha,
+			GunDirection.Rotation().Pitch, FRotator::NormalizeAxis(GunDirection.Rotation().Yaw - Control.Yaw),
+			TargetLocal.X, TargetLocal.Y, TargetLocal.Z, FVector::Dist(Shoulder, Target) / ArmLength, ElbowAngle, FVector::Dist(Hand, Target));
+	}
 }
 
 FVector UHuntAnimInstance::GetFootLocal(int32 Side) const
@@ -441,8 +470,10 @@ void UHuntAnimInstance::UpdateMovingBackward(float DeltaSeconds)
 
 void UHuntAnimInstance::UpdateSprintBlend(float DeltaSeconds)
 {
-	const bool bSprinting = GroundSpeed > (SprintBlendSpeed.X + SprintBlendSpeed.Y) * 0.5f;
-	SprintBlend = FMath::FInterpConstantTo(SprintBlend, bSprinting ? 1.f : 0.f, DeltaSeconds, 1.f / SprintBlendTime);
+	// 조준 중에는 속도가 아직 질주 속도에서 줄어드는 중이어도 질주 상체를 쓰지 않는다
+	const bool bAiming = Character->GetAimBlend() > 0.f;
+	const bool bSprinting = !bAiming && GroundSpeed > (SprintBlendSpeed.X + SprintBlendSpeed.Y) * 0.5f;
+	SprintBlend = FMath::FInterpConstantTo(SprintBlend, bSprinting ? 1.f : 0.f, DeltaSeconds, 1.f / (bAiming ? SprintToAimBlendTime : SprintBlendTime));
 	SprintAlpha = FMath::SmoothStep(0.f, 1.f, SprintBlend);
 }
 
@@ -457,23 +488,8 @@ void UHuntAnimInstance::UpdateStanceAlphas()
 		RelaxedAlpha *= LocalShadowRelaxedScale;
 	}
 	// 벽에 막혀 총을 내리면 대기 자세처럼 AO를 끄고 머리만 시선 애디티브로 위아래를 본다(ABP 시선 Alpha = 1 - AimOffsetAlpha)
-	AimOffsetAlpha = 1.f - FMath::Max(RelaxedAlpha, WallBlockAlpha);
-}
-
-void UHuntAnimInstance::UpdateRelaxedPoses()
-{
-	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
-	const UGripAttachmentDefinition* Grip = Weapon ? Weapon->GetGrip() : nullptr;
-	if (Grip && Grip->ThirdPersonRelaxedPose)
-	{
-		RelaxedPose = Grip->ThirdPersonRelaxedPose;
-		RelaxedRunArms = Grip->ThirdPersonRelaxedRunArms ? Grip->ThirdPersonRelaxedRunArms : DefaultRelaxedRunArms;
-	}
-	else
-	{
-		RelaxedPose = DefaultRelaxedPose;
-		RelaxedRunArms = DefaultRelaxedRunArms;
-	}
+	// 질주도 대기 팔 경로를 쓰므로 AO를 끈다. 켜 두면 아래를 볼 때 상체만 숙여져 질주 팔에 몸이 박힌다(11-24 PIE)
+	AimOffsetAlpha = 1.f - FMath::Max(FMath::Lerp(RelaxedAlpha, 1.f, SprintAlpha), WallBlockAlpha);
 }
 
 void UHuntAnimInstance::UpdateLeftHandIK()
@@ -485,8 +501,8 @@ void UHuntAnimInstance::UpdateLeftHandIK()
 	const float RelaxedArmsAlpha = FMath::Lerp(RelaxedAlpha, 1.f, SprintAlpha);
 	if (bHasWeapon)
 	{
-		const FTransform HandTransform = GetSkelMeshComponent()->GetSocketTransform(TEXT("hand_r"));
-		LeftHandIKLocation = HandTransform.InverseTransformPosition(Weapon->GetLeftHandGripLocation(AimAlpha, RelaxedArmsAlpha));
+		const FTransform GunBoneTransform = GetSkelMeshComponent()->GetSocketTransform(TEXT("ik_hand_gun"));
+		LeftHandIKLocation = GunBoneTransform.InverseTransformPosition(Weapon->GetLeftHandGripLocation(AimAlpha, RelaxedArmsAlpha));
 	}
 
 	const UGripAttachmentDefinition* Grip = bHasWeapon ? Weapon->GetGrip() : nullptr;
@@ -497,6 +513,27 @@ void UHuntAnimInstance::UpdateLeftHandIK()
 	if (bGripHand)
 	{
 		LeftHandIKRotation = GetSkelMeshComponent()->GetComponentTransform().InverseTransformRotation(GripRotation).Rotator();
+	}
+}
+
+void UHuntAnimInstance::UpdateRightHandIK()
+{
+	const AHuntWeapon* Weapon = Character->GetBodyWeapon();
+	FTransform GripTransform;
+	const bool bRightHand = Weapon && Weapon->GetRootComponent()->GetAttachParent() == GetSkelMeshComponent() && Weapon->GetRightHandGripTransform(GripTransform);
+	RightHandRelaxedAlpha = 0.f;
+	FTransform RelaxedHand;
+	if (bRightHand && Weapon->GetRightHandRelaxedTransform(RelaxedHand))
+	{
+		// 대기 팔 경로는 질주도 쓴다(UpdateLeftHandIK와 같은 값)
+		RightHandRelaxedAlpha = FMath::Lerp(RelaxedAlpha, 1.f, SprintAlpha);
+		Character->SetBodyWeaponRelaxedGrip(RightHandRelaxedAlpha);
+	}
+	RightHandIKAlpha = bRightHand ? 1.f - RightHandRelaxedAlpha : 0.f;
+	if (bRightHand)
+	{
+		RightHandIKLocation = GetSkelMeshComponent()->GetSocketTransform(TEXT("ik_hand_gun")).InverseTransformPosition(GripTransform.GetLocation());
+		RightHandIKRotation = GetSkelMeshComponent()->GetComponentTransform().InverseTransformRotation(GripTransform.GetRotation()).Rotator();
 	}
 }
 

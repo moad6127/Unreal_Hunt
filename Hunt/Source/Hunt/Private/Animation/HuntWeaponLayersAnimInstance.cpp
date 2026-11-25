@@ -29,6 +29,8 @@ void UHuntWeaponLayersAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaS
 	TurnTime = Main->TurnTime;
 	LeftHandGripPose = Main->LeftHandGripPose;
 	LeftHandGripAlpha = Main->LeftHandGripAlpha;
+	// 대기 오른손을 쓰는 만큼 방아쇠 손가락 포즈를 뺀다(대기 애니메이션 손가락이 총 목을 감싼다)
+	RightHandGripAlpha = RightHandGripPose ? 1.f - Main->RightHandRelaxedAlpha : 0.f;
 }
 
 void UHuntWeaponLayersAnimInstance::UpdatePoses()
@@ -40,5 +42,4 @@ void UHuntWeaponLayersAnimInstance::UpdatePoses()
 	RelaxedPose = bGripRelaxed ? Grip->ThirdPersonRelaxedPose : DefaultRelaxedPose;
 	RelaxedRunArms = bGripRelaxed && Grip->ThirdPersonRelaxedRunArms ? Grip->ThirdPersonRelaxedRunArms : DefaultRelaxedRunArms;
 	RightHandGripPose = DefaultRightHandPose;
-	RightHandGripAlpha = RightHandGripPose ? 1.f : 0.f;
 }

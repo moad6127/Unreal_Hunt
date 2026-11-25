@@ -6,7 +6,6 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
-#include "Weapon/Attachment/GripAttachmentDefinition.h"
 
 namespace
 {
@@ -41,7 +40,6 @@ void UHuntFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	RelaxedAlpha = Character->GetRelaxedBlend() * (1.f - FMath::GetMappedRangeValueClamped(FVector2f(300.f, 600.f), FVector2f(0.f, 1.f), GroundSpeed));
 
 	UpdateSwayTimes();
-	UpdateGripPoses();
 	UpdateLeftHandIK();
 }
 
@@ -64,13 +62,6 @@ void UHuntFirstPersonAnimInstance::UpdateSwayTimes()
 		WalkSwayTime = FMath::Fmod(Cycles * SwayCycle + 0.033f, 4.f);
 		SprintSwayTime = FMath::Fmod(Cycles * SwayCycle + 0.3f, 13.333f);
 	}
-}
-
-void UHuntFirstPersonAnimInstance::UpdateGripPoses()
-{
-	const AHuntWeapon* Weapon = Character->GetEquippedWeapon();
-	const UGripAttachmentDefinition* Grip = Weapon ? Weapon->GetGrip() : nullptr;
-	GripPoses = Grip ? Grip->FirstPersonGripPoses : DefaultGripPoses;
 }
 
 void UHuntFirstPersonAnimInstance::UpdateLeftHandIK()

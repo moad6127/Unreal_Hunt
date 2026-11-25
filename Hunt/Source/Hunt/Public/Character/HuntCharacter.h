@@ -33,6 +33,10 @@ public:
 	AHuntWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
 	AHuntWeapon* GetBodyWeapon() const { return BodyWeapon; }
 
+	// 전신 총을 손(ik_hand_gun)에 붙이는 자리. 0 = HandGrip_R 기준(허리 사격 손), 1 = 총의 대기 오른손 소켓(Socket_RightHand_Relaxed) 기준
+	// 전신 애님이 매 프레임 대기 오른손 가중치로 부른다
+	void SetBodyWeaponRelaxedGrip(float RelaxedHandAlpha);
+
 	// 조준 블렌드(0 = 지향사격, 1 = 완전 조준). 시작·끝이 부드럽게 감속되는 값이라 카메라와 애님이 같이 쓴다
 	float GetAimBlend() const { return FMath::SmoothStep(0.f, 1.f, AimAlpha); }
 

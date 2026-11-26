@@ -37,6 +37,14 @@ namespace
 	// 내려다볼 때 카메라를 앞에 둘 기준 뼈
 	const FName PelvisBone(TEXT("pelvis"));
 
+	// 카메라 앞 Distance(cm) 거리의 1cm가 화면에서 몇 "화면 세로 절반"인지. 총은 1인칭 FOV로 그려지므로 그 FOV를 넣는다
+	// 엔진 기본 MaintainYFOV: FOV는 카메라 AspectRatio에서의 가로 값이고 세로 시야가 고정이라, 세로 기준이면 PIE 창 비율과 무관하다
+	float CmToScreenHalfHeight(float Distance, float FirstPersonFOV, float AspectRatio)
+	{
+		const float TanHalfVerticalFOV = FMath::Tan(FMath::DegreesToRadians(FirstPersonFOV * 0.5f)) / AspectRatio;
+		return 1.f / (Distance * TanHalfVerticalFOV);
+	}
+
 	// 머리 뼈에서 시선 방향으로 얼마나 앞에 둘지(cm). 아래를 볼 때 하체 메시의 허리 잘린 면이 보이면 늘린다
 	constexpr float CameraForwardOffset = 15.f;
 	// 내려다볼수록 카메라를 골반보다 수평으로 최소 이만큼(cm, 똑바로 아래, 각도에 비례) 앞에 둔다. 상체가 덜 숙여지는 자세(대기 = ALS 시선 애디티브)에서도
@@ -197,9 +205,15 @@ void AHuntCharacter::EquipDefaultWeapon()
 	BodyWeapon = SpawnWeapon();
 	AttachBodyWeapon();
 
+	LensWeapon = SpawnWeapon();
+
 	// 부착물 메시가 총의 1인칭 렌더 설정을 따르므로 붙인 뒤에 장착한다
 	EquippedWeapon->GetAttachments()->EquipDefaultAttachments();
 	BodyWeapon->GetAttachments()->EquipDefaultAttachments();
+	// shortcut: 기본 부착물만 따라 단다, 개조 UI(M3)로 부착물을 바꾸게 되면 1인칭 총과 같이 바꾼다
+	LensWeapon->GetAttachments()->EquipDefaultAttachments();
+	SetupLensWeapon();
+	ApplyScopeReticle();
 
 	UpdateWeaponVisibility();
 	LinkWeaponAnimLayers();
@@ -243,6 +257,27 @@ void AHuntCharacter::AttachBodyWeapon()
 	SetBodyWeaponRelaxedGrip(0.f);
 }
 
+void AHuntCharacter::SetupLensWeapon()
+{
+	// 1인칭 총에 붙여 킥·흔들림·조준 정렬을 같이 따라간다(앞 렌즈 시점 보정은 UpdateLensWeaponView). 1인칭이 아닌 보통 물체라 세상 FOV로 그려져,
+	// 렌즈로 본 것처럼 배율만큼 확대되고 고배율에서는 총열이 렌즈 원 밖으로 벗어난다
+	LensWeapon->AttachToComponent(EquippedWeapon->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+
+	// 조준경 자체는 렌즈 안을 가리므로 그리지 않는다
+	const UStaticMeshComponent* Optic = LensWeapon->GetAttachments()->FindAttachmentSocketMesh(EHuntAttachmentSlot::Optic, SightSocketName);
+	TInlineComponentArray<UPrimitiveComponent*> Primitives(LensWeapon);
+	for (UPrimitiveComponent* Primitive : Primitives)
+	{
+		// MF_ScopeLensMask: Custom Primitive Data 0 = 1이면 1인칭 총이 잘리는 렌즈 원 안만 남긴다
+		Primitive->SetCustomPrimitiveDataFloat(0, 1.f);
+		Primitive->SetOnlyOwnerSee(true);
+		Primitive->SetCastShadow(false);
+		Primitive->SetAffectDistanceFieldLighting(false);
+		Primitive->SetVisibleInRayTracing(false);
+		Primitive->SetVisibility(Primitive != Optic);
+	}
+}
+
 void AHuntCharacter::SetBodyWeaponRelaxedGrip(float RelaxedHandAlpha)
 {
 	// HandGrip_R 소켓이 오른손 기준점이다
@@ -276,6 +311,7 @@ void AHuntCharacter::UpdateWeaponVisibility()
 	// 1인칭 팔의 총은 내 캐릭터에서만 보인다. 다른 사람 캐릭터는 전신 손의 총(BodyWeapon)만 보인다
 	// 팔을 숨기면(3인칭 테스트 BP) 붙어 있는 총 액터는 같이 숨겨지지 않으므로 따로 숨긴다
 	EquippedWeapon->SetActorHiddenInGame(!IsLocallyControlled() || FirstPersonArms->bHiddenInGame);
+	LensWeapon->SetActorHiddenInGame(EquippedWeapon->IsHidden());
 }
 
 float AHuntCharacter::GetStopBrakeSpeed() const
@@ -390,6 +426,7 @@ void AHuntCharacter::Tick(float DeltaSeconds)
 	UpdateWeaponKick(DeltaSeconds);
 	UpdateFirstPersonArms(AimBlend);
 	UpdateScopeLensMask(AimBlend);
+	UpdateLensWeaponView();
 }
 
 void AHuntCharacter::UpdateMovementSpeed(float DeltaSeconds)
@@ -617,30 +654,48 @@ void AHuntCharacter::UpdateScopeLensMask(float AimBlend)
 
 	// 조준경이 없으면 조준 정도 0: 머티리얼이 아무것도 자르지 않는다
 	FLinearColor Lens(0.f, 0.f, 0.f, 0.f);
-	const UOpticAttachmentDefinition* Optic = GetEquippedOptic();
-	const UStaticMeshComponent* OpticMesh = Optic ? EquippedWeapon->GetAttachments()->FindAttachmentSocketMesh(EHuntAttachmentSlot::Optic, SightSocketName) : nullptr;
-	if (OpticMesh)
+	if (const UStaticMeshComponent* OpticMesh = GetEquippedOpticMesh())
 	{
-		// 카메라 기준(X 앞, Y 오른쪽, Z 위). 총은 1인칭 FOV로 그려지므로 그 FOV(수평)로 투영한다. 1인칭 Scale은 카메라 쪽으로 누르기만 해서 화면 위치는 같다
+		// 카메라 기준(X 앞, Y 오른쪽, Z 위). 1인칭 Scale은 카메라 쪽으로 누르기만 해서 화면 위치는 같다
 		const FVector Eyepiece = FirstPersonCamera->GetComponentTransform().InverseTransformPosition(OpticMesh->GetSocketLocation(SightSocketName));
 		if (Eyepiece.X > KINDA_SMALL_NUMBER)
 		{
-			// 화면 중앙 원점, 화면 세로 절반 = 1인 단위. 엔진 기본 MaintainYFOV: FOV는 카메라 AspectRatio에서의 가로 값이고 세로 시야가 고정이라
-			// 세로 기준이면 PIE 창 비율과 무관하다. 가로 비율은 머티리얼이 ViewSize로 맞춘다
-			const float TanHalfVerticalFOV = FMath::Tan(FMath::DegreesToRadians(FirstPersonCamera->FirstPersonFieldOfView * 0.5f)) / FirstPersonCamera->AspectRatio;
-			const float CmToHalfHeight = 1.f / (Eyepiece.X * TanHalfVerticalFOV);
-			Lens = FLinearColor(Eyepiece.Y * CmToHalfHeight, Eyepiece.Z * CmToHalfHeight, Optic->EyepieceRadius * CmToHalfHeight, AimBlend);
+			// 화면 중앙 원점, 화면 세로 절반 = 1인 단위. 가로 비율은 머티리얼이 ViewSize로 맞춘다
+			const float CmToHalfHeight = CmToScreenHalfHeight(Eyepiece.X, FirstPersonCamera->FirstPersonFieldOfView, FirstPersonCamera->AspectRatio);
+			Lens = FLinearColor(Eyepiece.Y * CmToHalfHeight, Eyepiece.Z * CmToHalfHeight, GetEquippedOptic()->EyepieceRadius * CmToHalfHeight, AimBlend);
 		}
 	}
 	UKismetMaterialLibrary::SetVectorParameterValue(this, ScopeLensParameters, ScopeLensParameterName, Lens);
+}
 
-	// 레티클은 조준경을 바꿀 때만 다시 넣는다
-	UTexture2D* Reticle = Optic ? Optic->Reticle.Get() : nullptr;
-	if (ScopeReticleInstance && Reticle && Reticle != CurrentReticle)
+void AHuntCharacter::ApplyScopeReticle()
+{
+	const UOpticAttachmentDefinition* Optic = GetEquippedOptic();
+	if (ScopeReticleInstance && Optic && Optic->Reticle)
 	{
-		CurrentReticle = Reticle;
-		ScopeReticleInstance->SetTextureParameterValue(ScopeReticleTextureName, Reticle);
+		ScopeReticleInstance->SetTextureParameterValue(ScopeReticleTextureName, Optic->Reticle);
 	}
+}
+
+void AHuntCharacter::UpdateLensWeaponView()
+{
+	if (!LensWeapon)
+	{
+		return;
+	}
+
+	// 실제 조준경은 앞 렌즈로 들어온 상만 보인다. 앞 렌즈 깊이만큼 복제 총을 시선 축 뒤로 당기면
+	// 앞 렌즈 뒤의 레일·리시버·가늠쇠 받침은 카메라 뒤(근평면 밖)로 가고, 앞 렌즈보다 앞의 총열·총구만 렌즈 아래에 남는다
+	FVector Offset = FVector::ZeroVector;
+	const UStaticMeshComponent* OpticMesh = GetEquippedOpticMesh();
+	if (OpticMesh && OpticMesh->GetStaticMesh())
+	{
+		// 조준경 메시는 +Y가 앞이라 바운드 +Y 끝이 앞 렌즈
+		const FVector Objective = OpticMesh->GetComponentTransform().TransformPosition(FVector(0.f, OpticMesh->GetStaticMesh()->GetBoundingBox().Max.Y, 0.f));
+		const FVector Forward = FirstPersonCamera->GetForwardVector();
+		Offset = -Forward * FVector::DotProduct(Objective - FirstPersonCamera->GetComponentLocation(), Forward);
+	}
+	LensWeapon->SetActorLocation(EquippedWeapon->GetActorLocation() + Offset);
 }
 
 const UOpticAttachmentDefinition* AHuntCharacter::GetEquippedOptic() const
@@ -650,16 +705,31 @@ const UOpticAttachmentDefinition* AHuntCharacter::GetEquippedOptic() const
 		: nullptr;
 }
 
+const UStaticMeshComponent* AHuntCharacter::GetEquippedOpticMesh() const
+{
+	return GetEquippedOptic() ? EquippedWeapon->GetAttachments()->FindAttachmentSocketMesh(EHuntAttachmentSlot::Optic, SightSocketName) : nullptr;
+}
+
 float AHuntCharacter::GetAimFOV() const
 {
 	const UOpticAttachmentDefinition* Optic = GetEquippedOptic();
-	if (!Optic)
+	const UStaticMeshComponent* OpticMesh = GetEquippedOpticMesh();
+	if (!OpticMesh)
 	{
 		return AimFOV;
 	}
-	// 배율 = 화면에서 같은 물체가 커 보이는 비율이라 FOV 자체가 아니라 tan(FOV/2)를 나눈다
-	const float HalfTan = FMath::Tan(FMath::DegreesToRadians(DefaultFOV * 0.5f)) / Optic->Magnification;
-	return FMath::RadiansToDegrees(2.f * FMath::Atan(HalfTan));
+	// 조준을 다 했을 때 접안렌즈 원의 화면 반지름(화면 세로 절반 = 1). 조준 정렬은 Y·Z만 옮기므로 눈 거리(X)는 기본 팔 위치로 구하고,
+	// 킥은 넣지 않는다: 실제 조준경도 눈이 흔들려 렌즈가 커지고 작아질 뿐 렌즈 속 상의 배율은 그대로다
+	const float EyepieceDistance = ArmsWorldToCamera(ArmsBaseTransform, OpticMesh->GetSocketLocation(SightSocketName)).X;
+	if (EyepieceDistance <= KINDA_SMALL_NUMBER)
+	{
+		return AimFOV;
+	}
+	const float LensRadius = Optic->EyepieceRadius * CmToScreenHalfHeight(EyepieceDistance, GetAimFirstPersonFOV(), FirstPersonCamera->AspectRatio);
+	// 렌즈 원 가장자리가 실제 시야의 반각을 보이게: tan(세로 반각) × 렌즈 반지름 = 시야 절반 / 100m. FOV는 MaintainYFOV라 가로 값으로 돌려준다
+	const float FieldOfViewAt100m = Optic->FieldOfViewAt100mAt1x / Optic->Magnification;
+	const float TanHalfVertical = (FieldOfViewAt100m * 0.5f / 100.f) / LensRadius;
+	return FMath::RadiansToDegrees(2.f * FMath::Atan(TanHalfVertical * FirstPersonCamera->AspectRatio));
 }
 
 float AHuntCharacter::GetAimFirstPersonFOV() const

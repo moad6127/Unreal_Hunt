@@ -42,6 +42,9 @@ public:
 	// 1인칭 왼손목이 갈 위치(월드). 총에 1인칭 왼손 소켓이 없으면 false (그립 포즈 그대로 둔다)
 	bool GetFirstPersonLeftHandGripLocation(FVector& OutLocation) const;
 
+	// 1인칭 왼손(hand_l) 방향(월드). 1인칭 왼손 소켓에 회전을 넣은 총·부품만 true (없으면 그립 포즈 애니메이션의 손 방향)
+	bool GetFirstPersonLeftHandGripRotation(FQuat& OutRotation) const;
+
 	// 오른손이 쥐는 지점(Socket_Grip)의 총 메시 공간 위치. 손 기준점에 이 지점이 오도록 총을 붙인다. 소켓이 없으면 원점
 	FVector GetRightHandGripOffset() const;
 

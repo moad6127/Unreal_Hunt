@@ -9,6 +9,7 @@
 class AHuntWeapon;
 class UCameraComponent;
 class UInputAction;
+class UStaticMeshComponent;
 class UWeaponDefinition;
 struct FInputActionValue;
 
@@ -77,7 +78,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh")
 	TObjectPtr<USkeletalMeshComponent> FirstPersonLegs;
 
-	// 조준 시 시야각(가늠쇠 기준). 배율 있는 조준경을 달면 조준경 배율로 정한다(GetAimFOV)
+	// 조준 시 시야각(가늠쇠 기준). 배율 있는 조준경을 달면 조준경의 실제 시야로 정한다(GetAimFOV)
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Aim", meta = (ClampMin = "5.0", ClampMax = "170.0"))
 	float AimFOV = 70.f;
 
@@ -139,6 +140,10 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Weapon")
 	TObjectPtr<AHuntWeapon> BodyWeapon;
 
+	// 1인칭 총에 겹친 복제 총. 조준경 렌즈 원 안에서만, 세상과 같은 FOV(배율)로 보여 렌즈로 본 총열이 된다. 내 화면에만 보인다
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Weapon")
+	TObjectPtr<AHuntWeapon> LensWeapon;
+
 private:
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
@@ -163,6 +168,11 @@ private:
 	AHuntWeapon* SpawnWeapon();
 	void AttachFirstPersonWeapon();
 	void AttachBodyWeapon();
+	// LensWeapon을 1인칭 총에 겹쳐 붙이고 렌즈 안 전용으로 설정한다. 부착물을 단 뒤에 호출
+	void SetupLensWeapon();
+	// 레티클 포스트프로세스에 장착된 조준경의 레티클을 넣는다. 부착물을 단 뒤에 호출
+	// shortcut: 시작할 때 한 번뿐, 개조 UI(M3)로 조준경을 바꾸게 되면 바꾼 뒤에도 부른다
+	void ApplyScopeReticle();
 	// 총 DA의 계열 애님 레이어를 전신·1인칭 팔 애님에 연결한다
 	void LinkWeaponAnimLayers();
 
@@ -185,7 +195,9 @@ private:
 	void UpdateCameraView(float AimBlend);
 	// 장착된 조준경 (없거나 배율 없는 부착물이면 nullptr)
 	const class UOpticAttachmentDefinition* GetEquippedOptic() const;
-	// 조준이 끝났을 때의 시야각. 조준경이 있으면 그 배율, 없으면 AimFOV
+	// 장착된 조준경의 메시 (조준경이 없거나 Socket_Sight(접안렌즈)가 없으면 nullptr)
+	const UStaticMeshComponent* GetEquippedOpticMesh() const;
+	// 조준이 끝났을 때의 시야각. 조준경이 있으면 접안렌즈 원이 그 조준경의 실제 시야를 보이는 값, 없으면 AimFOV
 	float GetAimFOV() const;
 	// 조준이 끝났을 때 총을 그리는 시야각. 조준경이 있으면 그 조준경 값, 없으면 AimFOV(세상과 같음)
 	float GetAimFirstPersonFOV() const;
@@ -206,8 +218,10 @@ private:
 	void UpdateAirSpread(float DeltaSeconds);
 	void UpdateWeaponKick(float DeltaSeconds);
 	void UpdateFirstPersonArms(float AimBlend);
-	// 접안렌즈를 1인칭 FOV로 화면에 투영해 ScopeLensParameters에 넣는다. 팔·총 위치가 정해진 뒤에 호출
+	// 접안렌즈를 1인칭 FOV로 화면에 투영해 ScopeLensParameters에 넣는다. 팔·총 위치가 정해진 뒤에 호출(조준경이 없으면 조준 정도 0)
 	void UpdateScopeLensMask(float AimBlend);
+	// 렌즈 속 복제 총을 앞 렌즈에서 본 모습으로: 앞 렌즈가 눈에 오도록 시선 축을 따라 뒤로 당긴다. 팔·총 위치가 정해진 뒤에 호출
+	void UpdateLensWeaponView();
 	FTransform GetSightAlignedArmsTransform(float AimBlend) const;
 	FVector ArmsWorldToCamera(const FTransform& ArmsToCamera, const FVector& WorldLocation) const;
 
@@ -256,11 +270,9 @@ private:
 	// BP에 정한 팔의 카메라 기준 위치. 조준 정렬은 여기서부터 옮긴다
 	FTransform ArmsBaseTransform = FTransform::Identity;
 
-	// 카메라 포스트프로세스에 붙인 레티클 머티리얼 인스턴스와 지금 넣어 둔 레티클
+	// 카메라 포스트프로세스에 붙인 레티클 머티리얼 인스턴스
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialInstanceDynamic> ScopeReticleInstance;
-	UPROPERTY(Transient)
-	TObjectPtr<class UTexture2D> CurrentReticle;
 
 	// 총 킥(카메라 기준). 목표는 매 발 더해지고 0으로 돌아가며, 현재 값이 목표를 빠르게 따라간다
 	FVector KickTargetLocation = FVector::ZeroVector;

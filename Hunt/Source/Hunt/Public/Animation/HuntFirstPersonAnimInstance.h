@@ -62,6 +62,15 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	FVector LeftHandIKLocation = FVector::ZeroVector;
 
+	// 왼손 방향을 총에 고정하는 정도(0 또는 1). 1인칭 왼손 소켓에 회전이 있는 총·부품만 1
+	// 걷기·질주 애디티브가 손을 돌려도 손이 총을 쥔 방향 그대로 남는다
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float LeftHandRotationAlpha = 0.f;
+
+	// 왼손(hand_l) 방향을 ik_hand_gun 뼈 기준으로 나타낸 값. ABP는 손을 ik_hand_gun 방향으로 복사한 뒤 이 회전을 손 자신 기준으로 더한다
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	FRotator LeftHandIKRotation = FRotator::ZeroRotator;
+
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<AHuntCharacter> Character;

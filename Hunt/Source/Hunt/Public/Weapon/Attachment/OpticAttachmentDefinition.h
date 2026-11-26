@@ -19,10 +19,15 @@ class HUNT_API UOpticAttachmentDefinition : public UAttachmentDefinition
 public:
 	UOpticAttachmentDefinition() { Slot = EHuntAttachmentSlot::Optic; }
 
-	// 기본 시야각(1배) 대비 배율. 조준 FOV = 2·atan(tan(기본 FOV/2) / 배율)
+	// 맨눈 대비 실제 배율. 시야(100m에서 보이는 폭) = FieldOfViewAt100mAt1x / 배율
 	// shortcut: 고정 배율, 가변 배율이 필요해지면 MaxMagnification과 휠 입력을 더하고 이 값을 최소 배율로 쓴다
 	UPROPERTY(EditDefaultsOnly, Category = "Optic", meta = (ClampMin = "1.0"))
 	float Magnification = 4.f;
+
+	// 1배일 때 100m에서 렌즈 원에 보이는 폭(m) = 스펙 시야 × 그 배율. 조준 중 접안렌즈 원이 정확히 (이 값 / 배율) 폭을 보이도록 세상 FOV를 정한다
+	// (렌즈 반지름 = 시야 절반 × 10 mil이라 레티클 mil 눈금이 실제와 같다). 기본 26.5 = S&B PM II 5배 시야 5.3m × 5
+	UPROPERTY(EditDefaultsOnly, Category = "Optic", meta = (ClampMin = "0.1", Units = "m"))
+	float FieldOfViewAt100mAt1x = 26.5f;
 
 	// 조준 중 총·조준경을 그리는 시야각. 작을수록 접안렌즈가 화면에서 크게 보인다(배율과 무관한 보기용 값)
 	UPROPERTY(EditDefaultsOnly, Category = "Optic", meta = (ClampMin = "5.0", ClampMax = "170.0", Units = "deg"))

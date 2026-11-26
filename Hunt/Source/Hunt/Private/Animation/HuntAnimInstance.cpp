@@ -6,14 +6,9 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
 #include "Weapon/Attachment/GripAttachmentDefinition.h"
-#include "Weapon/WeaponDefinition.h"
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Curves/CurveVector.h"
-#include "HAL/IConsoleManager.h"
-
-// shortcut: 아래 조준 팔 꺾임 측정용 임시 로그(11-24), 원인 확인 뒤 지운다
-static TAutoConsoleVariable<int32> CVarAimArmDebug(TEXT("hunt.AimArmDebug"), 0, TEXT("1 = 3인칭 조준 팔(왼손 IK 목표·총 방향)을 매 프레임 AIMARM 로그로"));
 
 namespace
 {
@@ -103,35 +98,14 @@ void UHuntAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	UpdateMovingBackward(DeltaSeconds);
 	UpdateSprintBlend(DeltaSeconds);
 	UpdateStanceAlphas();
-	UpdateLeftHandIK();
+	// 오른손이 먼저: 대기 손 기준으로 총이 붙는 위치를 바꾸므로, 왼손 목표는 그 뒤의 총 위치로 계산해야 한다
 	UpdateRightHandIK();
+	UpdateLeftHandIK();
 	UpdateAimPitch();
 	UpdateTurnInPlace(DeltaSeconds);
 	UpdateLegStance(DeltaSeconds);
 	UpdatePlantTimes();
 	UpdateFootLock(DeltaSeconds);
-
-	// shortcut: 임시 측정 로그(위 CVarAimArmDebug). 뼈 위치는 지난 프레임 최종 포즈(IK 뒤)
-	const AHuntWeapon* DebugWeapon = Character->GetBodyWeapon();
-	if (CVarAimArmDebug.GetValueOnGameThread() > 0 && Character->IsLocallyControlled() && DebugWeapon && LeftHandIKAlpha > 0.f)
-	{
-		const USkeletalMeshComponent* Body = GetSkelMeshComponent();
-		const FVector Shoulder = Body->GetSocketLocation(TEXT("upperarm_l"));
-		const FVector Elbow = Body->GetSocketLocation(TEXT("lowerarm_l"));
-		const FVector Hand = Body->GetSocketLocation(TEXT("hand_l"));
-		const FVector Target = DebugWeapon->GetLeftHandGripLocation(AimAlpha, FMath::Lerp(RelaxedAlpha, 1.f, SprintAlpha));
-		const float ArmLength = FVector::Dist(Shoulder, Elbow) + FVector::Dist(Elbow, Hand);
-		const float ElbowAngle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct((Shoulder - Elbow).GetSafeNormal(), (Hand - Elbow).GetSafeNormal())));
-		const USkeletalMeshComponent* GunMesh = DebugWeapon->GetMesh();
-		const FVector GunDirection = (GunMesh->GetSocketLocation(TEXT("b_gun_muzzleflash")) - GunMesh->GetSocketLocation(TEXT("Socket_Grip"))).GetSafeNormal();
-		const FRotator Control = Character->GetControlRotation();
-		const FVector TargetLocal = Character->GetActorTransform().InverseTransformPosition(Target);
-		UE_LOG(LogTemp, Log, TEXT("AIMARM t=%.3f gun=%s grip=%s pitchRaw=%.1f pitch=%.1f aim=%.2f sprint=%.2f ao=%.2f relaxed=%.2f gunPitch=%.1f gunYawErr=%.1f tgt=(%.1f,%.1f,%.1f) reach=%.2f elbow=%.0f handErr=%.1f"),
-			GetWorld()->GetTimeSeconds(), *GetNameSafe(DebugWeapon->Definition.Get()), *GetNameSafe(DebugWeapon->GetGrip()),
-			FRotator::NormalizeAxis(Control.Pitch), AimPitch, AimAlpha, SprintAlpha, AimOffsetAlpha, RelaxedAlpha,
-			GunDirection.Rotation().Pitch, FRotator::NormalizeAxis(GunDirection.Rotation().Yaw - Control.Yaw),
-			TargetLocal.X, TargetLocal.Y, TargetLocal.Z, FVector::Dist(Shoulder, Target) / ArmLength, ElbowAngle, FVector::Dist(Hand, Target));
-	}
 }
 
 FVector UHuntAnimInstance::GetFootLocal(int32 Side) const

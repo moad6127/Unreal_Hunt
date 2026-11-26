@@ -74,4 +74,10 @@ void UHuntFirstPersonAnimInstance::UpdateLeftHandIK()
 		// 총이 ik_hand_gun에 붙어 있으므로 이 상대값은 프레임 지연 없이 정확하다
 		LeftHandIKLocation = GetSkelMeshComponent()->GetSocketTransform(TEXT("ik_hand_gun")).InverseTransformPosition(GripLocation);
 	}
+	FQuat GripRotation;
+	LeftHandRotationAlpha = bLeftHandIK && Weapon->GetFirstPersonLeftHandGripRotation(GripRotation) ? 1.f : 0.f;
+	if (LeftHandRotationAlpha > 0.f)
+	{
+		LeftHandIKRotation = GetSkelMeshComponent()->GetSocketTransform(TEXT("ik_hand_gun")).InverseTransformRotation(GripRotation).Rotator();
+	}
 }

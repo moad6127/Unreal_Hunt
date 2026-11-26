@@ -96,6 +96,23 @@ bool AHuntWeapon::GetFirstPersonLeftHandGripLocation(FVector& OutLocation) const
 	return true;
 }
 
+bool AHuntWeapon::GetFirstPersonLeftHandGripRotation(FQuat& OutRotation) const
+{
+	const USceneComponent* SocketComponent = GetLeftHandSocketComponent(FirstPersonLeftHandSocketName);
+	if (!SocketComponent->DoesSocketExist(FirstPersonLeftHandSocketName))
+	{
+		return false;
+	}
+	// 소켓 자체 회전: 스켈레탈은 붙은 뼈 기준(뼈 축이 메시와 달라도 0이면 0), 스태틱은 메시 기준(뼈 기준 공간이 없다)
+	const ERelativeTransformSpace OwnSpace = SocketComponent->IsA<USkeletalMeshComponent>() ? RTS_ParentBoneSpace : RTS_Component;
+	if (SocketComponent->GetSocketTransform(FirstPersonLeftHandSocketName, OwnSpace).GetRotation().IsIdentity())
+	{
+		return false;
+	}
+	OutRotation = SocketComponent->GetSocketQuaternion(FirstPersonLeftHandSocketName);
+	return true;
+}
+
 const USceneComponent* AHuntWeapon::GetLeftHandSocketComponent(FName SocketName) const
 {
 	// 손잡이 → 필수 부품(핸드가드) → 총 순서로 이 소켓이 있는 메시를 쓴다

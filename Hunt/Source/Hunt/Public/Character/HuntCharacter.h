@@ -11,6 +11,7 @@ class UCameraComponent;
 class UInputAction;
 class UStaticMeshComponent;
 class UWeaponDefinition;
+class UAnimInstance;
 struct FInputActionValue;
 
 // 총 자세. Relaxed = 총 내림(기본), Ready = 허리 사격 자세, Aiming = 조준
@@ -33,6 +34,10 @@ public:
 
 	AHuntWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
 	AHuntWeapon* GetBodyWeapon() const { return BodyWeapon; }
+	const UWeaponDefinition* GetWeaponDefinition() const;
+	// 지금 쓰는 총 계열 애님 레이어. 장착된 총몸에 레이어가 있으면 그것, 없으면 총 DA의 것
+	TSubclassOf<UAnimInstance> GetThirdPersonAnimLayers() const;
+	TSubclassOf<UAnimInstance> GetFirstPersonAnimLayers() const;
 
 	// 전신 총을 손(ik_hand_gun)에 붙이는 자리. 0 = HandGrip_R 기준(허리 사격 손), 1 = 총의 대기 오른손 소켓(Socket_RightHand_Relaxed) 기준
 	// 전신 애님이 매 프레임 대기 오른손 가중치로 부른다
@@ -173,10 +178,10 @@ private:
 	// 레티클 포스트프로세스에 장착된 조준경의 레티클을 넣는다. 부착물을 단 뒤에 호출
 	// shortcut: 시작할 때 한 번뿐, 개조 UI(M3)로 조준경을 바꾸게 되면 바꾼 뒤에도 부른다
 	void ApplyScopeReticle();
-	// 총 DA의 계열 애님 레이어를 전신·1인칭 팔 애님에 연결한다
+	// 총 계열 애님 레이어(총몸 → 총 DA)를 전신·1인칭 팔 애님에 연결한다
 	void LinkWeaponAnimLayers();
-
-	const UWeaponDefinition* GetWeaponDefinition() const;
+	// 장착된 총몸 (없으면 nullptr)
+	const class UChassisAttachmentDefinition* GetEquippedChassis() const;
 
 	// 이동 속도·걸음 상태
 	void UpdateMovementSpeed(float DeltaSeconds);

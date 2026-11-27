@@ -12,6 +12,7 @@
 #include "Weapon/HuntWeapon.h"
 #include "Weapon/Attachment/WeaponAttachmentComponent.h"
 #include "Weapon/Attachment/OpticAttachmentDefinition.h"
+#include "Weapon/Attachment/ChassisAttachmentDefinition.h"
 #include "Kismet/KismetMaterialLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Weapon/WeaponDefinition.h"
@@ -212,6 +213,9 @@ void AHuntCharacter::EquipDefaultWeapon()
 	BodyWeapon->GetAttachments()->EquipDefaultAttachments();
 	// shortcut: 기본 부착물만 따라 단다, 개조 UI(M3)로 부착물을 바꾸게 되면 1인칭 총과 같이 바꾼다
 	LensWeapon->GetAttachments()->EquipDefaultAttachments();
+	// 오른손 기준점(Socket_Grip)이 총몸 부품에 있을 수 있어 부품을 단 뒤 손 자리를 다시 맞춘다
+	AttachFirstPersonWeapon();
+	AttachBodyWeapon();
 	SetupLensWeapon();
 	ApplyScopeReticle();
 
@@ -222,14 +226,42 @@ void AHuntCharacter::EquipDefaultWeapon()
 void AHuntCharacter::LinkWeaponAnimLayers()
 {
 	// shortcut: 장착은 시작할 때 한 번뿐이라 이전 레이어를 끊지 않는다, 총 교체가 생기면 UnlinkAnimClassLayers를 먼저 부른다
-	if (DefaultWeapon->ThirdPersonAnimLayers)
+	// shortcut: 총몸도 시작할 때 출고 부품으로 한 번만 정한다, 개조 UI(M3)로 총몸을 바꾸게 되면 바꿀 때마다 다시 연결하고 손 자리도 다시 맞춘다
+	if (const TSubclassOf<UAnimInstance> ThirdPersonLayers = GetThirdPersonAnimLayers())
 	{
-		GetMesh()->LinkAnimClassLayers(DefaultWeapon->ThirdPersonAnimLayers);
+		GetMesh()->LinkAnimClassLayers(ThirdPersonLayers);
 	}
-	if (DefaultWeapon->FirstPersonAnimLayers)
+	if (const TSubclassOf<UAnimInstance> FirstPersonLayers = GetFirstPersonAnimLayers())
 	{
-		FirstPersonArms->LinkAnimClassLayers(DefaultWeapon->FirstPersonAnimLayers);
+		FirstPersonArms->LinkAnimClassLayers(FirstPersonLayers);
 	}
+}
+
+const UChassisAttachmentDefinition* AHuntCharacter::GetEquippedChassis() const
+{
+	return EquippedWeapon ? Cast<UChassisAttachmentDefinition>(EquippedWeapon->GetAttachments()->GetEquippedAttachment(EHuntAttachmentSlot::Chassis)) : nullptr;
+}
+
+TSubclassOf<UAnimInstance> AHuntCharacter::GetThirdPersonAnimLayers() const
+{
+	const UChassisAttachmentDefinition* Chassis = GetEquippedChassis();
+	if (Chassis && Chassis->ThirdPersonAnimLayers)
+	{
+		return Chassis->ThirdPersonAnimLayers;
+	}
+	const UWeaponDefinition* Definition = GetWeaponDefinition();
+	return Definition ? Definition->ThirdPersonAnimLayers : nullptr;
+}
+
+TSubclassOf<UAnimInstance> AHuntCharacter::GetFirstPersonAnimLayers() const
+{
+	const UChassisAttachmentDefinition* Chassis = GetEquippedChassis();
+	if (Chassis && Chassis->FirstPersonAnimLayers)
+	{
+		return Chassis->FirstPersonAnimLayers;
+	}
+	const UWeaponDefinition* Definition = GetWeaponDefinition();
+	return Definition ? Definition->FirstPersonAnimLayers : nullptr;
 }
 
 AHuntWeapon* AHuntCharacter::SpawnWeapon()

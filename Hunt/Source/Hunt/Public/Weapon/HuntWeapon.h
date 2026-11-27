@@ -45,13 +45,13 @@ public:
 	// 1인칭 왼손(hand_l) 방향(월드). 1인칭 왼손 소켓에 회전을 넣은 총·부품만 true (없으면 그립 포즈 애니메이션의 손 방향)
 	bool GetFirstPersonLeftHandGripRotation(FQuat& OutRotation) const;
 
-	// 오른손이 쥐는 지점(Socket_Grip)의 총 메시 공간 위치. 손 기준점에 이 지점이 오도록 총을 붙인다. 소켓이 없으면 원점
+	// 오른손이 쥐는 지점(Socket_Grip)의 총 메시 공간 위치(권총 손잡이 → 총몸 → 총 순서). 손 기준점에 이 지점이 오도록 총을 붙인다. 소켓이 없으면 원점. 부착물을 단 뒤에 읽는다
 	FVector GetRightHandGripOffset() const;
 
-	// 3인칭 오른손목(hand_r)이 갈 곳(월드). 몸통 등 필수 부품 → 총 순서로 Socket_RightHand를 찾는다. 없으면 false (애니메이션의 손 그대로)
+	// 3인칭 오른손목(hand_r)이 갈 곳(월드). 총몸 → 필수 부품 → 총 순서로 Socket_RightHand를 찾는다. 없으면 false (애니메이션의 손 그대로)
 	bool GetRightHandGripTransform(FTransform& OutTransform) const;
 
-	// 대기 자세의 3인칭 오른손목(hand_r) 자리(총 메시 공간). 몸통 등 필수 부품 → 총 순서로 Socket_RightHand_Relaxed를 찾는다. 없으면 false
+	// 대기 자세의 3인칭 오른손목(hand_r) 자리(총 메시 공간). 총몸 → 필수 부품 → 총 순서로 Socket_RightHand_Relaxed를 찾는다. 없으면 false
 	// 있으면 대기 동안 대기 애니메이션 손이 총을 쥐고(오른손 IK·방아쇠 손가락 끔) 총이 이 자리 기준으로 손에 붙는다
 	bool GetRightHandRelaxedTransform(FTransform& OutTransform) const;
 

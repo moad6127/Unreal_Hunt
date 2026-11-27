@@ -21,7 +21,14 @@ public:
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
 
+	float GetLocalShadowRelaxedScale() const { return LocalShadowRelaxedScale; }
+
 protected:
+	// 내 화면에 그림자만 남는 전신(1인칭)의 RelaxedAlpha 배율. 1인칭 대기 포즈가 3인칭 대기 자세와 다른 만큼 줄여 그림자가 1인칭 총과 어긋나지 않게 한다
+	// 1 = 줄이지 않음(1인칭 대기가 3인칭과 같은 계열). 권총 손잡이는 1인칭 대기가 총 정면이라 0.3
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float LocalShadowRelaxedScale = 0.3f;
+
 	// 계열 기본 대기 자세 포즈·앞 달리기 팔. 자식 레이어 ABP 기본값에서 정한다. 손잡이 DA에 3인칭 대기 포즈가 있으면 그것이 먼저다
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<UAnimSequence> DefaultRelaxedPose;

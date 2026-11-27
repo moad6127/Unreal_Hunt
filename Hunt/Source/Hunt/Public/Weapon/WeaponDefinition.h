@@ -9,6 +9,7 @@
 #include "WeaponDefinition.generated.h"
 
 class AHuntProjectile;
+class UChassisAttachmentDefinition;
 class UAnimInstance;
 class USkeletalMesh;
 class USoundBase;
@@ -33,57 +34,26 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TObjectPtr<USkeletalMesh> Mesh;
 
-	// 슬롯이 켜져 있으면 그 슬롯을 반환, 꺼져 있으면 nullptr
-	const FHuntWeaponSlot* FindSlot(EHuntAttachmentSlot Slot) const;
+	// 그 슬롯의 필수 부품(없으면 nullptr). 필수 부품이 있는 슬롯은 비울 수 없다
+	UAttachmentDefinition* GetRequiredPart(EHuntAttachmentSlot Slot) const;
+	bool IsRequiredSlot(EHuntAttachmentSlot Slot) const { return GetRequiredPart(Slot) != nullptr; }
 
 	// 총 바디가 주는 태그(예: Weapon.M4, Weapon.Feature.Rail.Top). 총의 태그 = 이것 + 장착된 부착물의 태그
 	UPROPERTY(EditDefaultsOnly, Category = "Attachments")
 	FGameplayTagContainer GrantedTags;
 
-	// 부착 슬롯. 체크를 끈 슬롯에는 아무것도 붙지 않는다
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
-	bool bOptic = false;
+	// 필수 부품: 값을 넣으면 그 슬롯은 필수이고 이 부품을 달고 나온다. 선택 부착물보다 먼저 달리고, 바뀌면 선택 부착물을 다시 검사한다
+	// 슬롯이 있는지는 소켓이 정한다(총 바디나 필수 부품 메시의 Socket_<슬롯>)
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments|Required Parts", meta = (DisplayName = "Chassis"))
+	TObjectPtr<UChassisAttachmentDefinition> RequiredChassis;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bOptic"))
-	FHuntWeaponSlot Optic;
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments|Required Parts", meta = (DisplayName = "Handguard"))
+	TObjectPtr<UAttachmentDefinition> RequiredHandguard;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
-	bool bMuzzle = false;
+	UPROPERTY(EditDefaultsOnly, Category = "Attachments|Required Parts", meta = (DisplayName = "Magazine"))
+	TObjectPtr<UAttachmentDefinition> RequiredMagazine;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bMuzzle"))
-	FHuntWeaponSlot Muzzle;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
-	bool bUnderbarrel = false;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bUnderbarrel"))
-	FHuntWeaponSlot Underbarrel;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
-	bool bMagazine = false;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bMagazine"))
-	FHuntWeaponSlot Magazine;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
-	bool bStock = false;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bStock"))
-	FHuntWeaponSlot Stock;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
-	bool bTactical = false;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bTactical"))
-	FHuntWeaponSlot Tactical;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (InlineEditConditionToggle))
-	bool bHandguard = false;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attachments", meta = (EditCondition = "bHandguard"))
-	FHuntWeaponSlot Handguard;
-
-	// 총이 생성될 때 달고 나오는 부착물(출고 상태). 장착할 부착물을 정하는 곳은 여기 하나다. 필수 슬롯 것이 먼저 달린다
+	// 총이 생성될 때 추가로 달고 나오는 선택 부착물(조준경·총구·개머리판 등). 필수 부품은 위 Required Parts에 넣는다
 	UPROPERTY(EditDefaultsOnly, Category = "Attachments")
 	TArray<TObjectPtr<UAttachmentDefinition>> DefaultAttachments;
 

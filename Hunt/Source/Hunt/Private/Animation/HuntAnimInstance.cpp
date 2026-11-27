@@ -5,6 +5,7 @@
 #include "Character/HuntCharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Weapon/HuntWeapon.h"
+#include "Animation/HuntWeaponLayersAnimInstance.h"
 #include "Weapon/Attachment/GripAttachmentDefinition.h"
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -55,8 +56,6 @@ namespace
 	constexpr float TurnRecoveryTime = 0.5f;
 	// 움직이는 동안 몸이 목표 방향(시선 또는 아래 이동 방향 쪽)으로 돌아가는 속도
 	constexpr float RootYawBlendOutSpeed = 5.f;
-	// 내 화면에 그림자만 남는 전신(1인칭)의 RelaxedAlpha 배율. 전신 대기 자세(총을 비스듬히 듦)가 1인칭 대기 포즈(총 정면)와 달라 그림자가 어긋나는 것을 줄인다. 1 = 줄이지 않음
-	constexpr float LocalShadowRelaxedScale = 0.3f;
 	// 질주 상체 블렌드: 속도가 이 구간의 중간을 넘으면 SprintBlendTime 동안 질주 상체로 바뀐다
 	const FVector2D SprintBlendSpeed = FVector2D(400.f, 550.f);
 	constexpr float SprintBlendTime = 0.4f;
@@ -459,7 +458,10 @@ void UHuntAnimInstance::UpdateStanceAlphas()
 	RelaxedAlpha = Character->GetRelaxedBlend() * (1.f - SprintAlpha);
 	if (Character->IsLocallyControlled() && GetSkelMeshComponent()->FirstPersonPrimitiveType == EFirstPersonPrimitiveType::WorldSpaceRepresentation)
 	{
-		RelaxedAlpha *= LocalShadowRelaxedScale;
+		// 배율은 총 계열 레이어가 정한다(레이어가 없으면 레이어 부모 기본값)
+		const TSubclassOf<UAnimInstance> LayersClass = Character->GetThirdPersonAnimLayers();
+		const UHuntWeaponLayersAnimInstance* Layers = LayersClass ? Cast<UHuntWeaponLayersAnimInstance>(LayersClass->GetDefaultObject()) : nullptr;
+		RelaxedAlpha *= (Layers ? Layers : GetDefault<UHuntWeaponLayersAnimInstance>())->GetLocalShadowRelaxedScale();
 	}
 	// 벽에 막혀 총을 내리면 대기 자세처럼 AO를 끄고 머리만 시선 애디티브로 위아래를 본다(ABP 시선 Alpha = 1 - AimOffsetAlpha)
 	// 질주도 대기 팔 경로를 쓰므로 AO를 끈다. 켜 두면 아래를 볼 때 상체만 숙여져 질주 팔에 몸이 박힌다(11-24 PIE)

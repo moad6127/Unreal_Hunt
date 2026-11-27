@@ -10,6 +10,8 @@ UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Attachment_Magazine, "Attachment.Magazine", "
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Attachment_Stock, "Attachment.Stock", "개머리판");
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Attachment_Tactical, "Attachment.Tactical", "전술 장비");
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Attachment_Handguard, "Attachment.Handguard", "핸드가드");
+UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Attachment_Chassis, "Attachment.Chassis", "총몸");
+UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Attachment_PistolGrip, "Attachment.PistolGrip", "권총 손잡이");
 
 FGameplayTag GetAttachmentSlotTag(EHuntAttachmentSlot Slot)
 {
@@ -23,6 +25,8 @@ FGameplayTag GetAttachmentSlotTag(EHuntAttachmentSlot Slot)
 	case EHuntAttachmentSlot::Stock:       return TAG_Attachment_Stock;
 	case EHuntAttachmentSlot::Tactical:    return TAG_Attachment_Tactical;
 	case EHuntAttachmentSlot::Handguard:   return TAG_Attachment_Handguard;
+	case EHuntAttachmentSlot::Chassis:     return TAG_Attachment_Chassis;
+	case EHuntAttachmentSlot::PistolGrip:  return TAG_Attachment_PistolGrip;
 	}
 	return FGameplayTag();
 }

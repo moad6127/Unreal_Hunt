@@ -18,16 +18,16 @@ class HUNT_API UWeaponAttachmentComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:
-	// 총에 그 슬롯이 있고 총의 태그가 부착물 조건(Required·Blocked)에 맞으면 소켓에 메시를 붙인다(같은 슬롯의 이전 부착물은 교체). 거부하면 false와 경고 로그
+	// 총의 태그가 부착물 조건(Required·Blocked)에 맞고 그 슬롯 소켓이 있으면 메시를 붙인다(같은 슬롯의 이전 부착물은 교체). 거부하면 false와 경고 로그
 	bool EquipAttachment(UAttachmentDefinition* Attachment);
 
-	// 총 Definition의 DefaultAttachments(출고 상태)를 단다. 필수 슬롯 것이 먼저
+	// 총 Definition의 출고 상태를 단다: 필수 부품(Required Parts) 먼저, 그다음 DefaultAttachments
 	void EquipDefaultAttachments();
 
 	// 그 슬롯에 달린 부착물 메시에 이 소켓이 있으면 그 메시, 없으면 nullptr (총 소켓을 쓰면 된다)
 	const UStaticMeshComponent* FindAttachmentSocketMesh(EHuntAttachmentSlot Slot, FName SocketName) const;
 
-	// 이 소켓이 있는 메시: 그 슬롯 부착물 → 필수 부품(예: 핸드가드) → 총 메시. 소켓이 어디에도 없으면 총 메시(DoesSocketExist로 확인)
+	// 이 소켓이 있는 메시: 그 슬롯 부착물 → 필수 부품(예: 핸드가드, 총몸) → 총 메시. 소켓이 어디에도 없으면 총 메시(DoesSocketExist로 확인)
 	// 하위 부착물이 붙는 자리·발사 위치·왼손 위치가 모두 이 순서를 쓴다
 	const USceneComponent* FindSocketComponent(EHuntAttachmentSlot Slot, FName SocketName) const;
 
@@ -46,6 +46,9 @@ private:
 
 	// 이 소켓이 있는 필수 부품 메시 (없으면 nullptr)
 	UStaticMeshComponent* FindRequiredPartSocketMesh(FName SocketName) const;
+
+	// 부착물이 숨겼던 총 바디 뼈를 다시 보이게 한다(떼거나 교체할 때)
+	void ShowHiddenBone(const UAttachmentDefinition* Attachment) const;
 
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Attachment")
 	TMap<EHuntAttachmentSlot, TObjectPtr<UAttachmentDefinition>> EquippedAttachments;

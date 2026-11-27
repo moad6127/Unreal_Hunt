@@ -20,9 +20,14 @@ enum class EHuntAttachmentSlot : uint8
 	Muzzle,
 	Underbarrel,
 	Magazine,
+	// 개머리판만(어느 총이든). 손잡이가 붙은 몸통은 Chassis
 	Stock,
 	Tactical,
-	Handguard
+	Handguard,
+	// 총몸: 오른손 손잡이·탄창 우물이 있는 몸통(볼트액션의 나무 몸통·섀시, M4의 하부). 손 자세(애님 레이어)와 오른손 기준점을 정한다
+	Chassis,
+	// 권총 손잡이: 총몸 메시의 Socket_PistolGrip에 붙는다. 기본 손잡이는 총몸 DA(DefaultPistolGrip)가 정한다. 손잡이가 몸통과 한 덩어리인 총몸(나무 몸통)은 소켓이 없다
+	PistolGrip
 };
 
 // 부착물 종류 태그. 장착된 부착물이 총에 자동으로 준다(코드가 쓰는 태그라 네이티브, 데이터 전용 태그는 Config/DefaultGameplayTags.ini)
@@ -33,24 +38,11 @@ HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Magazine);
 HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Stock);
 HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Tactical);
 HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Handguard);
+HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_Chassis);
+HUNT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Attachment_PistolGrip);
 
 // 슬롯의 종류 태그
 HUNT_API FGameplayTag GetAttachmentSlotTag(EHuntAttachmentSlot Slot);
-
-// 총(UWeaponDefinition)의 부착 슬롯 하나. 무엇을 달 수 있는지는 슬롯이 아니라 태그가 정한다(UAttachmentDefinition::RequiredTags)
-USTRUCT(BlueprintType)
-struct FHuntWeaponSlot
-{
-	GENERATED_BODY()
-
-	// 필수 부품(핸드가드·개머리판·탄창 등). 하위 부착물보다 먼저 달리고, 바뀌면 하위 부착물을 다시 검사한다. M3부터 비울 수 없음
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	bool bRequired = false;
-
-	// 부착물을 달면 숨길 기본 부품 뼈(예: 탄창 b_gun_mag). 없으면 비워 둔다
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FName HiddenBone;
-};
 
 // 부착물 스탯 배율. 총(UWeaponDefinition) 값에 곱하고, 장착된 부착물끼리도 곱한다. 1 = 변화 없음
 USTRUCT(BlueprintType)

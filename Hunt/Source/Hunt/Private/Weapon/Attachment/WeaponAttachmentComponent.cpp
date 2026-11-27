@@ -4,6 +4,7 @@
 #include "Weapon/Attachment/WeaponAttachmentComponent.h"
 #include "Weapon/HuntWeapon.h"
 #include "Weapon/WeaponDefinition.h"
+#include "Weapon/Attachment/ChassisAttachmentDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 
@@ -27,13 +28,6 @@ bool UWeaponAttachmentComponent::EquipAttachment(UAttachmentDefinition* Attachme
 		return false;
 	}
 
-	const FHuntWeaponSlot* WeaponSlot = WeaponDefinition->FindSlot(Attachment->Slot);
-	if (!WeaponSlot)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("%s: %s에는 %s 슬롯이 없어 장착하지 않음"),
-			*Attachment->GetName(), *WeaponDefinition->GetName(), *UEnum::GetValueAsString(Attachment->Slot));
-		return false;
-	}
 	FString Reason;
 	if (!CanEquipByTags(Attachment, Reason))
 	{
@@ -41,11 +35,12 @@ bool UWeaponAttachmentComponent::EquipAttachment(UAttachmentDefinition* Attachme
 		return false;
 	}
 
-	// 하위 부착물은 필수 부품 메시(예: 핸드가드)에 같은 소켓이 있으면 거기에, 없으면 총 메시에 붙는다
+	// 하위 부착물은 필수 부품 메시(예: 핸드가드)에 같은 소켓이 있으면 거기에, 없으면 총 메시에 붙는다. 소켓이 어디에도 없으면 그 총에는 이 슬롯이 없다
+	const bool bRequiredPart = WeaponDefinition->IsRequiredSlot(Attachment->Slot);
 	const FName SocketName(*FString::Printf(TEXT("Socket_%s"), *StaticEnum<EHuntAttachmentSlot>()->GetNameStringByValue(static_cast<int64>(Attachment->Slot))));
 	USkeletalMeshComponent* WeaponMesh = Weapon->GetMesh();
 	USceneComponent* ParentMesh = WeaponMesh;
-	if (!WeaponSlot->bRequired)
+	if (!bRequiredPart)
 	{
 		if (UStaticMeshComponent* PartMesh = FindRequiredPartSocketMesh(SocketName))
 		{
@@ -73,17 +68,27 @@ bool UWeaponAttachmentComponent::EquipAttachment(UAttachmentDefinition* Attachme
 	// 레일 슬롯 소켓은 +Y가 총 앞이다(M4·AR4 모두). AR4 총구 소켓은 축이 달라 총구 부착물은 0으로 둔다
 	MeshComponent->SetRelativeLocation(FVector(0.f, Attachment->MountOffset, 0.f));
 
-	// 기본 부품(예: 탄창 뼈)을 숨긴다
-	if (!WeaponSlot->HiddenBone.IsNone())
+	// 같은 슬롯의 이전 부착물이 숨긴 뼈는 다시 보이고, 이 부착물이 정한 기본 부품 뼈(예: 탄창 뼈)를 숨긴다
+	if (const UAttachmentDefinition* Previous = EquippedAttachments.FindRef(Attachment->Slot))
 	{
-		WeaponMesh->HideBoneByName(WeaponSlot->HiddenBone, PBO_None);
+		ShowHiddenBone(Previous);
+	}
+	if (!Attachment->HiddenBone.IsNone())
+	{
+		WeaponMesh->HideBoneByName(Attachment->HiddenBone, PBO_None);
 	}
 
 	EquippedAttachments.Add(Attachment->Slot, Attachment);
 
-	if (WeaponSlot->bRequired)
+	if (bRequiredPart)
 	{
 		RecheckOptionalAttachments();
+	}
+	// 손잡이가 따로인 총몸은 손잡이가 비면 자기 기본 손잡이를 단다(교체는 PistolGrip 부착물로)
+	const UChassisAttachmentDefinition* Chassis = Cast<UChassisAttachmentDefinition>(Attachment);
+	if (Chassis && Chassis->DefaultPistolGrip && !EquippedAttachments.Contains(EHuntAttachmentSlot::PistolGrip))
+	{
+		EquipAttachment(Chassis->DefaultPistolGrip);
 	}
 	return true;
 }
@@ -102,8 +107,7 @@ bool UWeaponAttachmentComponent::CanEquipByTags(const UAttachmentDefinition* Att
 		{
 			const FGameplayTagContainer PartTags = GetAttachmentTags(Pair.Value);
 			WeaponTags.AppendTags(PartTags);
-			const FHuntWeaponSlot* PartSlot = WeaponDefinition->FindSlot(Pair.Key);
-			if (PartSlot && PartSlot->bRequired)
+			if (WeaponDefinition->IsRequiredSlot(Pair.Key))
 			{
 				BaseTags.AppendTags(PartTags);
 			}
@@ -145,10 +149,10 @@ void UWeaponAttachmentComponent::RecheckOptionalAttachments()
 	EquippedAttachments.GenerateValueArray(Equipped);
 	for (UAttachmentDefinition* Child : Equipped)
 	{
-		const FHuntWeaponSlot* ChildSlot = WeaponDefinition->FindSlot(Child->Slot);
-		if (ChildSlot && !ChildSlot->bRequired && !EquipAttachment(Child))
+		if (!WeaponDefinition->IsRequiredSlot(Child->Slot) && !EquipAttachment(Child))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("%s: 필수 부품이 바뀌어 떼어 냄"), *Child->GetName());
+			ShowHiddenBone(Child);
 			EquippedAttachments.Remove(Child->Slot);
 			if (TObjectPtr<UStaticMeshComponent> MeshComponent = AttachmentMeshes.FindAndRemoveChecked(Child->Slot))
 			{
@@ -167,17 +171,28 @@ void UWeaponAttachmentComponent::EquipDefaultAttachments()
 		return;
 	}
 
-	// 하위 부착물이 필수 부품의 태그·소켓을 쓰므로 목록 순서와 상관없이 필수 부품을 먼저 단다
-	for (const bool bRequiredPass : { true, false })
+	// 하위 부착물이 필수 부품의 태그·소켓을 쓰므로 필수 부품을 먼저 단다
+	for (const EHuntAttachmentSlot Slot : { EHuntAttachmentSlot::Chassis, EHuntAttachmentSlot::Handguard, EHuntAttachmentSlot::Magazine })
 	{
-		for (UAttachmentDefinition* Attachment : WeaponDefinition->DefaultAttachments)
+		if (UAttachmentDefinition* Part = WeaponDefinition->GetRequiredPart(Slot))
 		{
-			const FHuntWeaponSlot* Slot = Attachment ? WeaponDefinition->FindSlot(Attachment->Slot) : nullptr;
-			if (Attachment && (Slot && Slot->bRequired) == bRequiredPass)
-			{
-				EquipAttachment(Attachment);
-			}
+			EquipAttachment(Part);
 		}
+	}
+	for (UAttachmentDefinition* Attachment : WeaponDefinition->DefaultAttachments)
+	{
+		if (Attachment)
+		{
+			EquipAttachment(Attachment);
+		}
+	}
+}
+
+void UWeaponAttachmentComponent::ShowHiddenBone(const UAttachmentDefinition* Attachment) const
+{
+	if (!Attachment->HiddenBone.IsNone())
+	{
+		GetOwner<AHuntWeapon>()->GetMesh()->UnHideBoneByName(Attachment->HiddenBone);
 	}
 }
 
@@ -207,8 +222,7 @@ UStaticMeshComponent* UWeaponAttachmentComponent::FindRequiredPartSocketMesh(FNa
 	const UWeaponDefinition* WeaponDefinition = GetOwner<AHuntWeapon>()->Definition;
 	for (const TPair<EHuntAttachmentSlot, TObjectPtr<UStaticMeshComponent>>& Pair : AttachmentMeshes)
 	{
-		const FHuntWeaponSlot* PartSlot = WeaponDefinition->FindSlot(Pair.Key);
-		if (PartSlot && PartSlot->bRequired && Pair.Value->DoesSocketExist(SocketName))
+		if (WeaponDefinition->IsRequiredSlot(Pair.Key) && Pair.Value->DoesSocketExist(SocketName))
 		{
 			return Pair.Value;
 		}

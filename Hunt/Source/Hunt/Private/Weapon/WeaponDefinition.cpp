@@ -2,7 +2,7 @@
 
 
 #include "Weapon/WeaponDefinition.h"
-#include "Weapon/Attachment/AttachmentDefinition.h"
+#include "Weapon/Attachment/ChassisAttachmentDefinition.h"
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
 #endif
@@ -11,16 +11,28 @@
 EDataValidationResult UWeaponDefinition::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);
-	// 필수 슬롯은 출고 목록에 그 슬롯 부착물이 있어야 한다(필수 부품 없는 총이 나오지 않게)
 	const UEnum* SlotEnum = StaticEnum<EHuntAttachmentSlot>();
-	for (int32 Index = 0; Index < SlotEnum->NumEnums() - 1; ++Index) // 마지막은 자동 생성된 _MAX
+	// 필수 부품 칸에는 그 슬롯의 부품만 넣는다
+	const TPair<EHuntAttachmentSlot, const UAttachmentDefinition*> RequiredParts[] = {
+		{ EHuntAttachmentSlot::Chassis, RequiredChassis },
+		{ EHuntAttachmentSlot::Handguard, RequiredHandguard },
+		{ EHuntAttachmentSlot::Magazine, RequiredMagazine } };
+	for (const TPair<EHuntAttachmentSlot, const UAttachmentDefinition*>& Part : RequiredParts)
 	{
-		const EHuntAttachmentSlot Slot = static_cast<EHuntAttachmentSlot>(SlotEnum->GetValueByIndex(Index));
-		const FHuntWeaponSlot* WeaponSlot = FindSlot(Slot);
-		const bool bHasDefault = DefaultAttachments.ContainsByPredicate([Slot](const UAttachmentDefinition* A) { return A && A->Slot == Slot; });
-		if (WeaponSlot && WeaponSlot->bRequired && !bHasDefault)
+		if (Part.Value && Part.Value->Slot != Part.Key)
 		{
-			Context.AddError(FText::FromString(FString::Printf(TEXT("필수 슬롯 %s의 부착물이 DefaultAttachments에 없습니다"), *SlotEnum->GetNameStringByIndex(Index))));
+			Context.AddError(FText::FromString(FString::Printf(TEXT("필수 부품 %s 칸에 %s 슬롯 부착물(%s)이 들어 있습니다"),
+				*SlotEnum->GetNameStringByValue(static_cast<int64>(Part.Key)), *SlotEnum->GetNameStringByValue(static_cast<int64>(Part.Value->Slot)), *Part.Value->GetName())));
+			Result = EDataValidationResult::Invalid;
+		}
+	}
+	// 기본 부착물에는 선택 부착물만 둔다(필수 슬롯 부품이 두 곳에 있으면 어느 것이 달릴지 헷갈린다)
+	for (const UAttachmentDefinition* Attachment : DefaultAttachments)
+	{
+		if (Attachment && IsRequiredSlot(Attachment->Slot))
+		{
+			Context.AddError(FText::FromString(FString::Printf(TEXT("%s는 필수 슬롯(%s) 부품이라 DefaultAttachments가 아니라 Required Parts에 넣습니다"),
+				*Attachment->GetName(), *SlotEnum->GetNameStringByValue(static_cast<int64>(Attachment->Slot)))));
 			Result = EDataValidationResult::Invalid;
 		}
 	}
@@ -28,17 +40,13 @@ EDataValidationResult UWeaponDefinition::IsDataValid(FDataValidationContext& Con
 }
 #endif
 
-const FHuntWeaponSlot* UWeaponDefinition::FindSlot(EHuntAttachmentSlot Slot) const
+UAttachmentDefinition* UWeaponDefinition::GetRequiredPart(EHuntAttachmentSlot Slot) const
 {
 	switch (Slot)
 	{
-	case EHuntAttachmentSlot::Optic:       return bOptic ? &Optic : nullptr;
-	case EHuntAttachmentSlot::Muzzle:      return bMuzzle ? &Muzzle : nullptr;
-	case EHuntAttachmentSlot::Underbarrel: return bUnderbarrel ? &Underbarrel : nullptr;
-	case EHuntAttachmentSlot::Magazine:    return bMagazine ? &Magazine : nullptr;
-	case EHuntAttachmentSlot::Stock:       return bStock ? &Stock : nullptr;
-	case EHuntAttachmentSlot::Tactical:    return bTactical ? &Tactical : nullptr;
-	case EHuntAttachmentSlot::Handguard:   return bHandguard ? &Handguard : nullptr;
+	case EHuntAttachmentSlot::Chassis:   return RequiredChassis;
+	case EHuntAttachmentSlot::Handguard: return RequiredHandguard;
+	case EHuntAttachmentSlot::Magazine:  return RequiredMagazine;
+	default:                             return nullptr;
 	}
-	return nullptr;
 }

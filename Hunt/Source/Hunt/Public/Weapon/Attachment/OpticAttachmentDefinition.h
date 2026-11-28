@@ -29,10 +29,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Optic", meta = (ClampMin = "0.1", Units = "m"))
 	float FieldOfViewAt100mAt1x = 26.5f;
 
-	// 조준 중 총·조준경을 그리는 시야각. 작을수록 접안렌즈가 화면에서 크게 보인다(배율과 무관한 보기용 값)
-	UPROPERTY(EditDefaultsOnly, Category = "Optic", meta = (ClampMin = "5.0", ClampMax = "170.0", Units = "deg"))
-	float AimFirstPersonFOV = 70.f;
-
 	// 접안렌즈 유리 반지름(cm). 조준 중 Socket_Sight(접안렌즈 중심)에서 이 반지름 원 안의 조준경 메시를 잘라 너머 세상이 보이게 한다
 	UPROPERTY(EditDefaultsOnly, Category = "Optic", meta = (ClampMin = "0.1", Units = "cm"))
 	float EyepieceRadius = 1.8f;

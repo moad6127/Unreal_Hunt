@@ -297,6 +297,8 @@ private:
 	float GetRunAnimSpeed() const;
 	void UpdateGaitBlend();
 	void UpdateMovingBackward(float DeltaSeconds);
+	// 이동 방향 구역(앞·옆·뒤)으로 원하는 골반 방향(bHipsBackwardTarget)을 정한다
+	void UpdateHipsBackwardTarget(float AbsDirection);
 	// 발 위치(컴포넌트 공간). 0 = 왼발, 1 = 오른발
 	FVector GetFootLocal(int32 Side) const;
 	// 캐릭터 기준 옆으로 왼발이 오른발보다 왼쪽에 있는 거리(cm). 음수면 다리가 교차했다

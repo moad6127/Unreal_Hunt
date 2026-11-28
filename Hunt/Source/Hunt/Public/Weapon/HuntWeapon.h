@@ -10,6 +10,7 @@ class UGripAttachmentDefinition;
 class USkeletalMeshComponent;
 class UWeaponAttachmentComponent;
 class UWeaponDefinition;
+enum class EHuntAttachmentSlot : uint8;
 
 UCLASS()
 class HUNT_API AHuntWeapon : public AActor
@@ -68,6 +69,8 @@ protected:
 private:
 	// 이 왼손 소켓이 있는 메시: 손잡이 → 필수 부품(핸드가드) → 총 순서
 	const USceneComponent* GetLeftHandSocketComponent(FName SocketName) const;
+	// FindSocketComponent 순서로 찾은, 이 소켓이 실제로 있는 메시 (어디에도 없으면 nullptr)
+	const USceneComponent* FindExistingSocket(EHuntAttachmentSlot Slot, FName SocketName) const;
 	// 총구에서 크로스헤어가 가리키는 점을 향해, 현재 탄퍼짐 안에서 발사체를 쏜다
 	void Shoot();
 	// 카메라 중앙 트레이스로 조준점을 구해 총구에서 그 점을 향하는 방향

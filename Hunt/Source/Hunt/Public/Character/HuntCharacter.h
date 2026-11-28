@@ -204,7 +204,7 @@ private:
 	const UStaticMeshComponent* GetEquippedOpticMesh() const;
 	// 조준이 끝났을 때의 시야각. 조준경이 있으면 접안렌즈 원이 그 조준경의 실제 시야를 보이는 값, 없으면 AimFOV
 	float GetAimFOV() const;
-	// 조준이 끝났을 때 총을 그리는 시야각. 조준경이 있으면 그 조준경 값, 없으면 AimFOV(세상과 같음)
+	// 조준이 끝났을 때 총을 그리는 시야각. 조준경이 있으면 접안렌즈 원이 화면 높이 70%가 되는 값, 없으면 AimFOV(세상과 같음)
 	float GetAimFirstPersonFOV() const;
 
 	// 반동 (조준선). 이번 프레임에 적용할 몫을 꺼내고 남은 양을 줄인다

@@ -17,6 +17,12 @@ namespace
 		Tags.AddTag(GetAttachmentSlotTag(Attachment->Slot));
 		return Tags;
 	}
+
+	// 슬롯이 붙는 소켓 이름: Socket_<슬롯>
+	FName GetSlotSocketName(EHuntAttachmentSlot Slot)
+	{
+		return FName(*FString::Printf(TEXT("Socket_%s"), *StaticEnum<EHuntAttachmentSlot>()->GetNameStringByValue(static_cast<int64>(Slot))));
+	}
 }
 
 bool UWeaponAttachmentComponent::EquipAttachment(UAttachmentDefinition* Attachment)
@@ -35,52 +41,20 @@ bool UWeaponAttachmentComponent::EquipAttachment(UAttachmentDefinition* Attachme
 		return false;
 	}
 
-	// 하위 부착물은 필수 부품 메시(예: 핸드가드)에 같은 소켓이 있으면 거기에, 없으면 총 메시에 붙는다. 소켓이 어디에도 없으면 그 총에는 이 슬롯이 없다
-	const bool bRequiredPart = WeaponDefinition->IsRequiredSlot(Attachment->Slot);
-	const FName SocketName(*FString::Printf(TEXT("Socket_%s"), *StaticEnum<EHuntAttachmentSlot>()->GetNameStringByValue(static_cast<int64>(Attachment->Slot))));
-	USkeletalMeshComponent* WeaponMesh = Weapon->GetMesh();
-	USceneComponent* ParentMesh = WeaponMesh;
-	if (!bRequiredPart)
-	{
-		if (UStaticMeshComponent* PartMesh = FindRequiredPartSocketMesh(SocketName))
-		{
-			ParentMesh = PartMesh;
-		}
-	}
-	if (!ParentMesh->DoesSocketExist(SocketName))
+	// 소켓이 어디에도 없으면 그 총에는 이 슬롯이 없다
+	const FName SocketName = GetSlotSocketName(Attachment->Slot);
+	USceneComponent* ParentMesh = FindParentMesh(Attachment, SocketName);
+	if (!ParentMesh)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("%s: %s 소켓이 없어 장착하지 않음"), *Attachment->GetName(), *SocketName.ToString());
 		return false;
 	}
 
-	TObjectPtr<UStaticMeshComponent>& MeshComponent = AttachmentMeshes.FindOrAdd(Attachment->Slot);
-	if (!MeshComponent)
-	{
-		MeshComponent = NewObject<UStaticMeshComponent>(GetOwner());
-		MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MeshComponent->RegisterComponent();
-	}
-	// 필수 부품이 바뀌면 하위 부착물의 부모 메시도 바뀌므로 장착할 때마다 다시 붙인다
-	MeshComponent->AttachToComponent(ParentMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
-	// 1인칭 팔 총이면 1인칭 렌더, 전신 총이면 내 화면에서 그림자만 남게 총 메시를 따른다
-	MeshComponent->SetFirstPersonPrimitiveType(WeaponMesh->FirstPersonPrimitiveType);
-	MeshComponent->SetStaticMesh(Attachment->Mesh);
-	// 레일 슬롯 소켓은 +Y가 총 앞이다(M4·AR4 모두). AR4 총구 소켓은 축이 달라 총구 부착물은 0으로 둔다
-	MeshComponent->SetRelativeLocation(FVector(0.f, Attachment->MountOffset, 0.f));
-
-	// 같은 슬롯의 이전 부착물이 숨긴 뼈는 다시 보이고, 이 부착물이 정한 기본 부품 뼈(예: 탄창 뼈)를 숨긴다
-	if (const UAttachmentDefinition* Previous = EquippedAttachments.FindRef(Attachment->Slot))
-	{
-		ShowHiddenBone(Previous);
-	}
-	if (!Attachment->HiddenBone.IsNone())
-	{
-		WeaponMesh->HideBoneByName(Attachment->HiddenBone, PBO_None);
-	}
-
+	AttachSlotMesh(Attachment, ParentMesh, SocketName);
+	SwapHiddenBone(Attachment);
 	EquippedAttachments.Add(Attachment->Slot, Attachment);
 
-	if (bRequiredPart)
+	if (WeaponDefinition->IsRequiredSlot(Attachment->Slot))
 	{
 		RecheckOptionalAttachments();
 	}
@@ -93,26 +67,78 @@ bool UWeaponAttachmentComponent::EquipAttachment(UAttachmentDefinition* Attachme
 	return true;
 }
 
-bool UWeaponAttachmentComponent::CanEquipByTags(const UAttachmentDefinition* Attachment, FString& OutReason) const
+USceneComponent* UWeaponAttachmentComponent::FindParentMesh(const UAttachmentDefinition* Attachment, FName SocketName) const
+{
+	// 하위 부착물은 필수 부품 메시(예: 핸드가드)에 같은 소켓이 있으면 거기에, 없으면 총 메시에 붙는다
+	const AHuntWeapon* Weapon = GetOwner<AHuntWeapon>();
+	USceneComponent* Parent = Weapon->GetMesh();
+	if (!Weapon->Definition->IsRequiredSlot(Attachment->Slot))
+	{
+		if (UStaticMeshComponent* PartMesh = FindRequiredPartSocketMesh(SocketName))
+		{
+			Parent = PartMesh;
+		}
+	}
+	return Parent->DoesSocketExist(SocketName) ? Parent : nullptr;
+}
+
+void UWeaponAttachmentComponent::AttachSlotMesh(const UAttachmentDefinition* Attachment, USceneComponent* Parent, FName SocketName)
+{
+	TObjectPtr<UStaticMeshComponent>& MeshComponent = AttachmentMeshes.FindOrAdd(Attachment->Slot);
+	if (!MeshComponent)
+	{
+		MeshComponent = NewObject<UStaticMeshComponent>(GetOwner());
+		MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MeshComponent->RegisterComponent();
+	}
+	// 필수 부품이 바뀌면 하위 부착물의 부모 메시도 바뀌므로 장착할 때마다 다시 붙인다
+	MeshComponent->AttachToComponent(Parent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
+	// 1인칭 팔 총이면 1인칭 렌더, 전신 총이면 내 화면에서 그림자만 남게 총 메시를 따른다
+	MeshComponent->SetFirstPersonPrimitiveType(GetOwner<AHuntWeapon>()->GetMesh()->FirstPersonPrimitiveType);
+	MeshComponent->SetStaticMesh(Attachment->Mesh);
+	// 레일 슬롯 소켓은 +Y가 총 앞이다(M4·AR4 모두). AR4 총구 소켓은 축이 달라 총구 부착물은 0으로 둔다
+	MeshComponent->SetRelativeLocation(FVector(0.f, Attachment->MountOffset, 0.f));
+}
+
+void UWeaponAttachmentComponent::SwapHiddenBone(const UAttachmentDefinition* Attachment) const
+{
+	// 같은 슬롯의 이전 부착물이 숨긴 뼈는 다시 보이고, 이 부착물이 정한 기본 부품 뼈(예: 탄창 뼈)를 숨긴다
+	if (const UAttachmentDefinition* Previous = EquippedAttachments.FindRef(Attachment->Slot))
+	{
+		ShowHiddenBone(Previous);
+	}
+	if (!Attachment->HiddenBone.IsNone())
+	{
+		GetOwner<AHuntWeapon>()->GetMesh()->HideBoneByName(Attachment->HiddenBone, PBO_None);
+	}
+}
+
+void UWeaponAttachmentComponent::GatherWeaponTags(EHuntAttachmentSlot ExcludedSlot, FGameplayTagContainer& OutWeaponTags, FGameplayTagContainer& OutBaseTags) const
 {
 	const UWeaponDefinition* WeaponDefinition = GetOwner<AHuntWeapon>()->Definition;
-
-	// 총의 태그 = 총 바디 + 장착된 부착물. 같은 슬롯에서 교체될 부착물은 뺀다.
-	// RequiredTags는 바디·필수 부품 태그로만 판단한다(하위 부착물이 준 태그로 붙으면 장착 순서에 따라 결과가 달라진다)
-	FGameplayTagContainer WeaponTags = WeaponDefinition->GrantedTags;
-	FGameplayTagContainer BaseTags = WeaponDefinition->GrantedTags;
+	OutWeaponTags = WeaponDefinition->GrantedTags;
+	OutBaseTags = WeaponDefinition->GrantedTags;
 	for (const TPair<EHuntAttachmentSlot, TObjectPtr<UAttachmentDefinition>>& Pair : EquippedAttachments)
 	{
-		if (Pair.Key != Attachment->Slot)
+		if (Pair.Key != ExcludedSlot)
 		{
 			const FGameplayTagContainer PartTags = GetAttachmentTags(Pair.Value);
-			WeaponTags.AppendTags(PartTags);
+			OutWeaponTags.AppendTags(PartTags);
 			if (WeaponDefinition->IsRequiredSlot(Pair.Key))
 			{
-				BaseTags.AppendTags(PartTags);
+				OutBaseTags.AppendTags(PartTags);
 			}
 		}
 	}
+}
+
+bool UWeaponAttachmentComponent::CanEquipByTags(const UAttachmentDefinition* Attachment, FString& OutReason) const
+{
+	// 같은 슬롯에서 교체될 부착물은 뺀다.
+	// RequiredTags는 바디·필수 부품 태그로만 판단한다(하위 부착물이 준 태그로 붙으면 장착 순서에 따라 결과가 달라진다)
+	FGameplayTagContainer WeaponTags;
+	FGameplayTagContainer BaseTags;
+	GatherWeaponTags(Attachment->Slot, WeaponTags, BaseTags);
 
 	for (const FGameplayTag& Tag : Attachment->RequiredTags)
 	{

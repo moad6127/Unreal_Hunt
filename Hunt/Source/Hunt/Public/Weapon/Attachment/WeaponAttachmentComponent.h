@@ -41,6 +41,18 @@ private:
 	// 총의 태그로 RequiredTags·BlockedTags를 검사한다. 거부하면 OutReason에 이유
 	bool CanEquipByTags(const UAttachmentDefinition* Attachment, FString& OutReason) const;
 
+	// 총의 태그를 모은다: OutWeaponTags = 바디 + 장착된 부착물 전체, OutBaseTags = 바디 + 필수 부품. ExcludedSlot(교체될 슬롯)은 뺀다
+	void GatherWeaponTags(EHuntAttachmentSlot ExcludedSlot, FGameplayTagContainer& OutWeaponTags, FGameplayTagContainer& OutBaseTags) const;
+
+	// 부착물 메시가 붙을 메시: 필수 부품은 총 메시, 하위 부착물은 그 소켓이 있는 필수 부품 메시 → 총 메시. 소켓이 없으면 nullptr
+	USceneComponent* FindParentMesh(const UAttachmentDefinition* Attachment, FName SocketName) const;
+
+	// 슬롯의 메시 컴포넌트(없으면 만든다)를 Parent의 소켓에 붙이고 부착물 메시로 바꾼다
+	void AttachSlotMesh(const UAttachmentDefinition* Attachment, USceneComponent* Parent, FName SocketName);
+
+	// 같은 슬롯의 이전 부착물이 숨긴 뼈를 보이고, 이 부착물이 정한 뼈를 숨긴다
+	void SwapHiddenBone(const UAttachmentDefinition* Attachment) const;
+
 	// 필수 부품을 바꾼 뒤 하위 부착물을 다시 달고, 태그가 맞지 않으면 뗀다
 	void RecheckOptionalAttachments();
 

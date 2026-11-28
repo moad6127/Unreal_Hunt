@@ -403,24 +403,9 @@ void UHuntAnimInstance::UpdateMovingBackward(float DeltaSeconds)
 		return;
 	}
 
-	// ALS 방식(Directional States): 캐릭터 정면 기준 이동 방향을 앞·옆·뒤 구역으로 나눈다
-	// 앞 구역이면 앞걸음, 뒤 구역이면 뒷걸음. 옆 구역에 들어오면 일단 지금 골반 방향을 유지하고(뒤에서 왔으면 LB/RB),
-	// 좌우를 바로 뒤집을 때는 골반 상태를 그대로 두고 블렌드스페이스 방향 보간(UpdateFoldedDirections)이 정면/정뒤를 지나 이어지게 한다
-	// 뒷걸음 골반으로 옆걸음하는 건 잠깐뿐: 전환 블렌드가 끝나면(HipsSettleTime) 앞을 보는 옆걸음(LF/RF)으로 돌아간다(ALS LB→LF, RB→RF)
 	TimeSinceHipsSwitch += DeltaSeconds;
 	const float AbsDirection = FMath::Abs(VelocityDirection);
-	if (AbsDirection < 90.f - SideQuadrantHalfWidth)
-	{
-		bHipsBackwardTarget = false;
-	}
-	else if (AbsDirection > 90.f + SideQuadrantHalfWidth)
-	{
-		bHipsBackwardTarget = true;
-	}
-	else if (bMovingBackward && bHipsBackwardTarget && TimeSinceHipsSwitch >= HipsSettleTime)
-	{
-		bHipsBackwardTarget = false;
-	}
+	UpdateHipsBackwardTarget(AbsDirection);
 
 	// 골반 방향은 다리가 교차하지 않을 때만 바꾼다(ALS와 같은 조건: 옆걸음 애니메이션의 Feet_Crossing 커브 = 0, 지난 프레임 최종 포즈 커브)
 	// 앞뒤 달리기와 Jog 앞쪽 옆걸음에는 이 커브가 없어(0) 바로 바뀐다
@@ -438,6 +423,26 @@ void UHuntAnimInstance::UpdateMovingBackward(float DeltaSeconds)
 		bMovingBackward = bHipsBackwardTarget;
 		HipsSwitchWaitTime = 0.f;
 		TimeSinceHipsSwitch = 0.f;
+	}
+}
+
+void UHuntAnimInstance::UpdateHipsBackwardTarget(float AbsDirection)
+{
+	// ALS 방식(Directional States): 캐릭터 정면 기준 이동 방향을 앞·옆·뒤 구역으로 나눈다
+	// 앞 구역이면 앞걸음, 뒤 구역이면 뒷걸음. 옆 구역에 들어오면 일단 지금 골반 방향을 유지하고(뒤에서 왔으면 LB/RB),
+	// 좌우를 바로 뒤집을 때는 골반 상태를 그대로 두고 블렌드스페이스 방향 보간(UpdateFoldedDirections)이 정면/정뒤를 지나 이어지게 한다
+	// 뒷걸음 골반으로 옆걸음하는 건 잠깐뿐: 전환 블렌드가 끝나면(HipsSettleTime) 앞을 보는 옆걸음(LF/RF)으로 돌아간다(ALS LB→LF, RB→RF)
+	if (AbsDirection < 90.f - SideQuadrantHalfWidth)
+	{
+		bHipsBackwardTarget = false;
+	}
+	else if (AbsDirection > 90.f + SideQuadrantHalfWidth)
+	{
+		bHipsBackwardTarget = true;
+	}
+	else if (bMovingBackward && bHipsBackwardTarget && TimeSinceHipsSwitch >= HipsSettleTime)
+	{
+		bHipsBackwardTarget = false;
 	}
 }
 

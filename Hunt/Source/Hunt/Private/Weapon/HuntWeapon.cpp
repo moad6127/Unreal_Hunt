@@ -87,8 +87,8 @@ bool AHuntWeapon::GetLeftHandGripRotation(float AimAlpha, float RelaxedAlpha, FQ
 
 bool AHuntWeapon::GetFirstPersonLeftHandGripLocation(FVector& OutLocation) const
 {
-	const USceneComponent* SocketComponent = GetLeftHandSocketComponent(FirstPersonLeftHandSocketName);
-	if (!SocketComponent->DoesSocketExist(FirstPersonLeftHandSocketName))
+	const USceneComponent* SocketComponent = FindExistingSocket(EHuntAttachmentSlot::Underbarrel, FirstPersonLeftHandSocketName);
+	if (!SocketComponent)
 	{
 		return false;
 	}
@@ -98,8 +98,8 @@ bool AHuntWeapon::GetFirstPersonLeftHandGripLocation(FVector& OutLocation) const
 
 bool AHuntWeapon::GetFirstPersonLeftHandGripRotation(FQuat& OutRotation) const
 {
-	const USceneComponent* SocketComponent = GetLeftHandSocketComponent(FirstPersonLeftHandSocketName);
-	if (!SocketComponent->DoesSocketExist(FirstPersonLeftHandSocketName))
+	const USceneComponent* SocketComponent = FindExistingSocket(EHuntAttachmentSlot::Underbarrel, FirstPersonLeftHandSocketName);
+	if (!SocketComponent)
 	{
 		return false;
 	}
@@ -119,19 +119,25 @@ const USceneComponent* AHuntWeapon::GetLeftHandSocketComponent(FName SocketName)
 	return Attachments->FindSocketComponent(EHuntAttachmentSlot::Underbarrel, SocketName);
 }
 
+const USceneComponent* AHuntWeapon::FindExistingSocket(EHuntAttachmentSlot Slot, FName SocketName) const
+{
+	const USceneComponent* SocketComponent = Attachments->FindSocketComponent(Slot, SocketName);
+	return SocketComponent->DoesSocketExist(SocketName) ? SocketComponent : nullptr;
+}
+
 FVector AHuntWeapon::GetRightHandGripOffset() const
 {
 	// 권총 손잡이 → 필수 부품(총몸 등) → 총 순서(손잡이가 몸통과 한 덩어리인 총은 몸통 소켓)
-	const USceneComponent* SocketComponent = Attachments->FindSocketComponent(EHuntAttachmentSlot::PistolGrip, RightHandGripSocketName);
-	return SocketComponent->DoesSocketExist(RightHandGripSocketName)
+	const USceneComponent* SocketComponent = FindExistingSocket(EHuntAttachmentSlot::PistolGrip, RightHandGripSocketName);
+	return SocketComponent
 		? Mesh->GetComponentTransform().InverseTransformPosition(SocketComponent->GetSocketLocation(RightHandGripSocketName))
 		: FVector::ZeroVector;
 }
 
 bool AHuntWeapon::GetRightHandGripTransform(FTransform& OutTransform) const
 {
-	const USceneComponent* SocketComponent = Attachments->FindSocketComponent(EHuntAttachmentSlot::PistolGrip, RightHandSocketName);
-	if (!SocketComponent->DoesSocketExist(RightHandSocketName))
+	const USceneComponent* SocketComponent = FindExistingSocket(EHuntAttachmentSlot::PistolGrip, RightHandSocketName);
+	if (!SocketComponent)
 	{
 		return false;
 	}
@@ -141,8 +147,8 @@ bool AHuntWeapon::GetRightHandGripTransform(FTransform& OutTransform) const
 
 bool AHuntWeapon::GetRightHandRelaxedTransform(FTransform& OutTransform) const
 {
-	const USceneComponent* SocketComponent = Attachments->FindSocketComponent(EHuntAttachmentSlot::PistolGrip, RightHandRelaxedSocketName);
-	if (!SocketComponent->DoesSocketExist(RightHandRelaxedSocketName))
+	const USceneComponent* SocketComponent = FindExistingSocket(EHuntAttachmentSlot::PistolGrip, RightHandRelaxedSocketName);
+	if (!SocketComponent)
 	{
 		return false;
 	}

@@ -25,6 +25,7 @@ namespace
 	const FName SightSocketName(TEXT("Socket_Sight"));
 	// ScopeLensParameters MPC의 벡터 파라미터 이름
 	const FName ScopeLensParameterName(TEXT("ScopeLens"));
+	const FName ScopeObjectiveParameterName(TEXT("ScopeObjective"));
 	// ScopeReticleMaterial의 레티클 텍스처 파라미터 이름
 	const FName ScopeReticleTextureName(TEXT("ReticleTexture"));
 	// 다른 사람이 보는 전신 총은 ik_hand_gun 뼈에 붙인다(ABP가 hand_r을 복사해 두고, 손잡이가 다른 총은 오른손을 IK로 총에 맞춘다)
@@ -45,6 +46,19 @@ namespace
 		const float TanHalfVerticalFOV = FMath::Tan(FMath::DegreesToRadians(FirstPersonFOV * 0.5f)) / AspectRatio;
 		return 1.f / (Distance * TanHalfVerticalFOV);
 	}
+
+	// 조준경 앞 렌즈 중심(월드): 접안렌즈 광축(Socket_Sight)을 따라 메시 앞 끝까지 간 점. 조준경 메시는 +Y가 앞이다
+	FVector GetScopeObjectiveLocation(const UStaticMeshComponent& OpticMesh)
+	{
+		FVector Local = OpticMesh.GetSocketTransform(SightSocketName, RTS_Component).GetLocation();
+		Local.Y = OpticMesh.GetStaticMesh()->GetBoundingBox().Max.Y;
+		return OpticMesh.GetComponentTransform().TransformPosition(Local);
+	}
+
+	// 조준을 다 했을 때 접안렌즈 유리 원의 화면 반지름(화면 세로 절반 = 1, 곧 지름 / 화면 높이). 총과 조준경에 상관없이 같은 크기로 보이게 한다
+	constexpr float ScopeLensScreenRadius = 0.7f;
+	// 조준 중 눈(카메라)~접안렌즈 거리(cm). 실제 조준경 아이 릴리프(S&B PM II 9cm). 모든 총·조준경이 이 거리로 조준한다
+	constexpr float ScopeEyeRelief = 9.f;
 
 	// 머리 뼈에서 시선 방향으로 얼마나 앞에 둘지(cm). 아래를 볼 때 하체 메시의 허리 잘린 면이 보이면 늘린다
 	constexpr float CameraForwardOffset = 15.f;
@@ -686,18 +700,28 @@ void AHuntCharacter::UpdateScopeLensMask(float AimBlend)
 
 	// 조준경이 없으면 조준 정도 0: 머티리얼이 아무것도 자르지 않는다
 	FLinearColor Lens(0.f, 0.f, 0.f, 0.f);
-	if (const UStaticMeshComponent* OpticMesh = GetEquippedOpticMesh())
+	FLinearColor Objective(0.f, 0.f, 0.f, 0.f);
+	const UStaticMeshComponent* OpticMesh = GetEquippedOpticMesh();
+	if (OpticMesh && OpticMesh->GetStaticMesh())
 	{
 		// 카메라 기준(X 앞, Y 오른쪽, Z 위). 1인칭 Scale은 카메라 쪽으로 누르기만 해서 화면 위치는 같다
-		const FVector Eyepiece = FirstPersonCamera->GetComponentTransform().InverseTransformPosition(OpticMesh->GetSocketLocation(SightSocketName));
-		if (Eyepiece.X > KINDA_SMALL_NUMBER)
+		const FTransform& CameraTransform = FirstPersonCamera->GetComponentTransform();
+		const FVector Eyepiece = CameraTransform.InverseTransformPosition(OpticMesh->GetSocketLocation(SightSocketName));
+		const FVector ObjectiveInCamera = CameraTransform.InverseTransformPosition(GetScopeObjectiveLocation(*OpticMesh));
+		if (Eyepiece.X > KINDA_SMALL_NUMBER && ObjectiveInCamera.X > KINDA_SMALL_NUMBER)
 		{
 			// 화면 중앙 원점, 화면 세로 절반 = 1인 단위. 가로 비율은 머티리얼이 ViewSize로 맞춘다
-			const float CmToHalfHeight = CmToScreenHalfHeight(Eyepiece.X, FirstPersonCamera->FirstPersonFieldOfView, FirstPersonCamera->AspectRatio);
+			const float FOV = FirstPersonCamera->FirstPersonFieldOfView;
+			const float Aspect = FirstPersonCamera->AspectRatio;
+			const float CmToHalfHeight = CmToScreenHalfHeight(Eyepiece.X, FOV, Aspect);
 			Lens = FLinearColor(Eyepiece.Y * CmToHalfHeight, Eyepiece.Z * CmToHalfHeight, GetEquippedOptic()->EyepieceRadius * CmToHalfHeight, AimBlend);
+			const float ObjectiveCmToHalfHeight = CmToScreenHalfHeight(ObjectiveInCamera.X, FOV, Aspect);
+			Objective = FLinearColor(ObjectiveInCamera.Y * ObjectiveCmToHalfHeight, ObjectiveInCamera.Z * ObjectiveCmToHalfHeight, 0.f, 0.f);
 		}
 	}
 	UKismetMaterialLibrary::SetVectorParameterValue(this, ScopeLensParameters, ScopeLensParameterName, Lens);
+	// M_ScopeReticle 스코프 섀도: 밝은 원이 앞 렌즈 쪽으로 간다
+	UKismetMaterialLibrary::SetVectorParameterValue(this, ScopeLensParameters, ScopeObjectiveParameterName, Objective);
 }
 
 void AHuntCharacter::ApplyScopeReticle()
@@ -722,8 +746,7 @@ void AHuntCharacter::UpdateLensWeaponView()
 	const UStaticMeshComponent* OpticMesh = GetEquippedOpticMesh();
 	if (OpticMesh && OpticMesh->GetStaticMesh())
 	{
-		// 조준경 메시는 +Y가 앞이라 바운드 +Y 끝이 앞 렌즈
-		const FVector Objective = OpticMesh->GetComponentTransform().TransformPosition(FVector(0.f, OpticMesh->GetStaticMesh()->GetBoundingBox().Max.Y, 0.f));
+		const FVector Objective = GetScopeObjectiveLocation(*OpticMesh);
 		const FVector Forward = FirstPersonCamera->GetForwardVector();
 		Offset = -Forward * FVector::DotProduct(Objective - FirstPersonCamera->GetComponentLocation(), Forward);
 	}
@@ -745,29 +768,26 @@ const UStaticMeshComponent* AHuntCharacter::GetEquippedOpticMesh() const
 float AHuntCharacter::GetAimFOV() const
 {
 	const UOpticAttachmentDefinition* Optic = GetEquippedOptic();
-	const UStaticMeshComponent* OpticMesh = GetEquippedOpticMesh();
-	if (!OpticMesh)
+	if (!GetEquippedOpticMesh())
 	{
 		return AimFOV;
 	}
-	// 조준을 다 했을 때 접안렌즈 원의 화면 반지름(화면 세로 절반 = 1). 조준 정렬은 Y·Z만 옮기므로 눈 거리(X)는 기본 팔 위치로 구하고,
-	// 킥은 넣지 않는다: 실제 조준경도 눈이 흔들려 렌즈가 커지고 작아질 뿐 렌즈 속 상의 배율은 그대로다
-	const float EyepieceDistance = ArmsWorldToCamera(ArmsBaseTransform, OpticMesh->GetSocketLocation(SightSocketName)).X;
-	if (EyepieceDistance <= KINDA_SMALL_NUMBER)
-	{
-		return AimFOV;
-	}
-	const float LensRadius = Optic->EyepieceRadius * CmToScreenHalfHeight(EyepieceDistance, GetAimFirstPersonFOV(), FirstPersonCamera->AspectRatio);
-	// 렌즈 원 가장자리가 실제 시야의 반각을 보이게: tan(세로 반각) × 렌즈 반지름 = 시야 절반 / 100m. FOV는 MaintainYFOV라 가로 값으로 돌려준다
+	// 렌즈 원(화면 반지름 ScopeLensScreenRadius) 가장자리가 실제 시야의 반각을 보이게: tan(세로 반각) × 렌즈 반지름 = 시야 절반 / 100m. FOV는 MaintainYFOV라 가로 값으로 돌려준다
 	const float FieldOfViewAt100m = Optic->FieldOfViewAt100mAt1x / Optic->Magnification;
-	const float TanHalfVertical = (FieldOfViewAt100m * 0.5f / 100.f) / LensRadius;
+	const float TanHalfVertical = (FieldOfViewAt100m * 0.5f / 100.f) / ScopeLensScreenRadius;
 	return FMath::RadiansToDegrees(2.f * FMath::Atan(TanHalfVertical * FirstPersonCamera->AspectRatio));
 }
 
 float AHuntCharacter::GetAimFirstPersonFOV() const
 {
 	const UOpticAttachmentDefinition* Optic = GetEquippedOptic();
-	return Optic ? Optic->AimFirstPersonFOV : AimFOV;
+	if (!GetEquippedOpticMesh())
+	{
+		return AimFOV;
+	}
+	// 조준 정렬이 접안렌즈를 눈 거리 ScopeEyeRelief에 두므로, 그 거리에서 렌즈가 화면 반지름 ScopeLensScreenRadius가 되는 FOV
+	const float TanHalfVertical = Optic->EyepieceRadius / (ScopeEyeRelief * ScopeLensScreenRadius);
+	return FMath::RadiansToDegrees(2.f * FMath::Atan(TanHalfVertical * FirstPersonCamera->AspectRatio));
 }
 
 FTransform AHuntCharacter::GetSightAlignedArmsTransform(float AimBlend) const
@@ -782,7 +802,9 @@ FTransform AHuntCharacter::GetSightAlignedArmsTransform(float AimBlend) const
 	if (WeaponMesh && SightComponent->DoesSocketExist(SightSocketName) && WeaponMesh->GetAttachParent() == FirstPersonArms)
 	{
 		const FVector SightInCamera = ArmsWorldToCamera(ArmsToCamera, SightComponent->GetSocketLocation(SightSocketName));
-		ArmsToCamera.AddToTranslation(-FVector(0.f, SightInCamera.Y, SightInCamera.Z) * AimBlend);
+		// 배율 조준경은 앞뒤도 옮겨 접안렌즈를 눈 거리 ScopeEyeRelief에 둔다: 총마다 레일 위치·자세가 달라도 조준경이 똑같이 보인다
+		const float EyeReliefOffset = GetEquippedOpticMesh() ? ScopeEyeRelief - SightInCamera.X : 0.f;
+		ArmsToCamera.AddToTranslation(FVector(EyeReliefOffset, -SightInCamera.Y, -SightInCamera.Z) * AimBlend);
 	}
 	return ArmsToCamera;
 }
